@@ -1,0 +1,12 @@
+# See https://github.com/JuliaInterop/Clang.jl/blob/master/gen/generator.toml for a full list of configuration options.
+
+[general]
+library_name = "libcopt"
+print_using_CEnum = false
+smart_de_anonymize = true
+
+[codegen]
+always_NUL_terminated_string = true
+is_function_strictly_typed = false
+opaque_func_arg_as_PtrCvoid = false
+opaque_as_mutable_struct = true
