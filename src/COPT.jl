@@ -16,9 +16,7 @@ function _get_version_number()
         banner = unsafe_string(pointer(buffer))
         m = match(r"Cardinal Optimizer v([0-9]+)\.([0-9]+)\.([0-9]+)", banner)
         if length(m.captures) == 3
-            major = parse(Int, m.captures[1])
-            minor = parse(Int, m.captures[2])
-            technical = parse(Int, m.captures[3])
+            major, minor, technical = parse.(Int, m.captures)
             return VersionNumber(major, minor, technical)
         end
     end
