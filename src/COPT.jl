@@ -2,7 +2,7 @@ module COPT
 
 include(joinpath(dirname(@__DIR__), "deps", "deps.jl"))
 
-function _get_library_version()
+function _get_version_number()
     buffer_size = 1024
     buffer = zeros(Cchar, buffer_size)
     ret = ccall(
@@ -26,7 +26,7 @@ function _get_library_version()
     return VersionNumber(0, 0, 0)
 end
 
-const _COPT_VERSION = _get_library_version()
+const _COPT_VERSION = _get_version_number()
 const _GEN_DIR = "gen$_COPT_VERSION"
 
 if isdir(joinpath(@__DIR__, _GEN_DIR))
