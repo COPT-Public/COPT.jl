@@ -28,7 +28,7 @@ const _COPT_VERSION = _get_version_number()
 const _GEN_DIR = "gen$_COPT_VERSION"
 
 if isdir(joinpath(@__DIR__, _GEN_DIR))
-    include(joinpath(_GEN_DIR, "libcopt.jl"))
+    include("$_GEN_DIR/libcopt.jl")
 else
     error("""
 You have installed version $_COPT_VERSION of COPT, which is not supported
