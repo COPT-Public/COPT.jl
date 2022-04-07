@@ -394,8 +394,6 @@ function MOI.supports_constraint(
         MOI.Interval{Float64},
         MOI.ZeroOne,
         MOI.Integer,
-        MOI.Semicontinuous{Float64},
-        MOI.Semiinteger{Float64},
     },
 }
     return true
@@ -1100,22 +1098,6 @@ function MOI.is_valid(
            _info(model, c).type == COPT_INTEGER
 end
 
-function MOI.is_valid(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semicontinuous{Float64}},
-)
-    return haskey(model.variable_info, MOI.VariableIndex(c.value)) &&
-           _info(model, c).type == CPX_SEMICONT
-end
-
-function MOI.is_valid(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semiinteger{Float64}},
-)
-    return haskey(model.variable_info, MOI.VariableIndex(c.value)) &&
-           _info(model, c).type == CPX_SEMIINT
-end
-
 function MOI.get(
     model::Optimizer,
     ::MOI.ConstraintFunction,
@@ -1151,10 +1133,6 @@ function _throw_if_existing_lower(
         MOI.Interval{Float64}
     elseif bound == _EQUAL_TO
         MOI.EqualTo{Float64}
-    elseif var_type == CPX_SEMIINT
-        MOI.Semiinteger{Float64}
-    elseif var_type == CPX_SEMICONT
-        MOI.Semicontinuous{Float64}
     else
         nothing  # Also covers `_NONE` and `_LESS_THAN`.
     end
@@ -1175,10 +1153,6 @@ function _throw_if_existing_upper(
         MOI.Interval{Float64}
     elseif bound == _EQUAL_TO
         MOI.EqualTo{Float64}
-    elseif var_type == CPX_SEMIINT
-        MOI.Semiinteger{Float64}
-    elseif var_type == CPX_SEMICONT
-        MOI.Semicontinuous{Float64}
     else
         nothing  # Also covers `_NONE` and `_GREATER_THAN`.
     end
@@ -1571,120 +1545,6 @@ function MOI.get(
 )
     MOI.throw_if_not_valid(model, c)
     return MOI.Integer()
-end
-
-function MOI.add_constraint(
-    model::Optimizer,
-    f::MOI.VariableIndex,
-    s::MOI.Semicontinuous{Float64},
-)
-    info = _info(model, f)
-    _throw_if_existing_lower(info.bound, info.type, typeof(s), f)
-    _throw_if_existing_upper(info.bound, info.type, typeof(s), f)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}(CPX_SEMICONT),
-    )
-    _check_ret(model, ret)
-    _set_variable_lower_bound(model, info, s.lower)
-    _set_variable_upper_bound(model, info, s.upper)
-    info.type = CPX_SEMICONT
-    return MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semicontinuous{Float64}}(
-        f.value,
-    )
-end
-
-function MOI.delete(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semicontinuous{Float64}},
-)
-    MOI.throw_if_not_valid(model, c)
-    info = _info(model, c)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}(CPX_CONTINUOUS),
-    )
-    _check_ret(model, ret)
-    _set_variable_lower_bound(model, info, -Inf)
-    _set_variable_upper_bound(model, info, Inf)
-    info.type = CPX_CONTINUOUS
-    model.name_to_constraint_index = nothing
-    return
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintSet,
-    c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semicontinuous{Float64}},
-)
-    MOI.throw_if_not_valid(model, c)
-    info = _info(model, c)
-    lower = _get_variable_lower_bound(model, info)
-    upper = _get_variable_upper_bound(model, info)
-    return MOI.Semicontinuous(lower, upper)
-end
-
-function MOI.add_constraint(
-    model::Optimizer,
-    f::MOI.VariableIndex,
-    s::MOI.Semiinteger{Float64},
-)
-    info = _info(model, f)
-    _throw_if_existing_lower(info.bound, info.type, typeof(s), f)
-    _throw_if_existing_upper(info.bound, info.type, typeof(s), f)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}(CPX_SEMIINT),
-    )
-    _check_ret(model, ret)
-    _set_variable_lower_bound(model, info, s.lower)
-    _set_variable_upper_bound(model, info, s.upper)
-    info.type = CPX_SEMIINT
-    return MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semiinteger{Float64}}(
-        f.value,
-    )
-end
-
-function MOI.delete(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semiinteger{Float64}},
-)
-    MOI.throw_if_not_valid(model, c)
-    info = _info(model, c)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}(CPX_CONTINUOUS),
-    )
-    _check_ret(model, ret)
-    _set_variable_lower_bound(model, info, -Inf)
-    _set_variable_upper_bound(model, info, Inf)
-    info.type = CPX_CONTINUOUS
-    model.name_to_constraint_index = nothing
-    return
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintSet,
-    c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Semiinteger{Float64}},
-)
-    MOI.throw_if_not_valid(model, c)
-    info = _info(model, c)
-    lower = _get_variable_lower_bound(model, info)
-    upper = _get_variable_upper_bound(model, info)
-    return MOI.Semiinteger(lower, upper)
 end
 
 ###
@@ -2993,8 +2853,6 @@ _bound_enums(::Any) = (nothing,)
 
 _type_enums(::Type{MOI.ZeroOne}) = (COPT_BINARY,)
 _type_enums(::Type{MOI.Integer}) = (COPT_INTEGER,)
-_type_enums(::Type{<:MOI.Semicontinuous}) = (CPX_SEMICONT,)
-_type_enums(::Type{<:MOI.Semiinteger}) = (CPX_SEMIINT,)
 _type_enums(::Any) = (nothing,)
 
 function MOI.get(
@@ -3090,10 +2948,6 @@ function MOI.get(model::Optimizer, ::MOI.ListOfConstraintTypesPresent)
             push!(constraints, (MOI.VariableIndex, MOI.ZeroOne))
         elseif info.type == COPT_INTEGER
             push!(constraints, (MOI.VariableIndex, MOI.Integer))
-        elseif info.type == CPX_SEMICONT
-            push!(constraints, (MOI.VariableIndex, MOI.Semicontinuous{Float64}))
-        elseif info.type == CPX_SEMIINT
-            push!(constraints, (MOI.VariableIndex, MOI.Semiinteger{Float64}))
         end
     end
     for info in values(model.affine_constraint_info)
