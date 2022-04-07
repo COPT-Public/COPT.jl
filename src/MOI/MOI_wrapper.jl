@@ -49,7 +49,7 @@ mutable struct _VariableInfo
     lower_bound_if_soc::Float64
     num_soc_constraints::Int
     function _VariableInfo(index::MOI.VariableIndex, column::Int)
-        return new(index, column, _NONE, CPX_CONTINUOUS, nothing, "", NaN, 0)
+        return new(index, column, _NONE, COPT_CONTINUOUS, nothing, "", NaN, 0)
     end
 end
 
@@ -63,7 +63,7 @@ mutable struct _ConstraintInfo
 end
 
 mutable struct Env
-    ptr::Ptr{Cvoid}
+    ptr::Ptr{copt_env}
     # These fields keep track of how many models the `Env` is used for to help
     # with finalizing. If you finalize an Env first, then the model, CPLEX will
     # throw an error.
@@ -71,43 +71,34 @@ mutable struct Env
     attached_models::Int
 
     function Env()
-        status_p = Ref{Cint}()
-        ptr = CPXopenCPLEX(status_p)
-        if status_p[] != 0
-            error(
-                "CPLEX Error $(status_p[]): Unable to create CPLEX environment.",
-            )
+        p_ptr = Ref{Ptr{copt_env}}(C_NULL)
+        ret = COPT_CreateEnv(p_ptr)
+        if ret != COPT_RETCODE_OK
+            error("COPT error $ret: Unable to create COPT environment.")
         end
-        env = new(ptr, false, 0)
+        env = new(p_ptr[], false, 0)
         finalizer(env) do e
             e.finalize_called = true
             if e.attached_models == 0
                 # Only finalize the model if there are no models using it.
-                CPXcloseCPLEX(Ref(e.ptr))
+                COPT_CloseEnv(Ref(e.ptr))
                 e.ptr = C_NULL
             end
         end
         return env
     end
 end
-Base.cconvert(::Type{Ptr{Cvoid}}, x::Env) = x
-Base.unsafe_convert(::Type{Ptr{Cvoid}}, env::Env) = env.ptr::Ptr{Cvoid}
 
-function _get_error_string(env::Union{Env,CPXENVptr}, ret::Cint)
-    buffer = Array{Cchar}(undef, CPXMESSAGEBUFSIZE)
-    p = pointer(buffer)
-    return GC.@preserve buffer begin
-        errstr = CPXgeterrorstring(env, ret, p)
-        if errstr == C_NULL
-            "CPLEX Error $(ret): Unknown error code."
-        else
-            unsafe_string(p)
-        end
+function _get_error_string(env::Env, ret::Cint)
+    buffer = zeros(Cchar, COPT_BUFFSIZE)
+    if COPT_GetRetcodeMsg(ret, pointer(buffer), size(buffer)) == COPT_RETCODE_OK
+        return unsafe_string(pointer(buffer))
     end
+    return "COPT error $(ret): Unknown error code."
 end
 
-function _check_ret(env::Union{Env,CPXENVptr}, ret::Cint)
-    if ret == 0
+function _check_ret(env::Env, ret::Cint)
+    if ret == COPT_RETCODE_OK
         return
     end
     return error(_get_error_string(env, ret))
@@ -118,7 +109,7 @@ end
 # below, then the rest of the code should pick up on this seamlessly.
 const _ERROR_TO_STATUS = Dict{Cint,MOI.TerminationStatusCode}([
     # CPLEX Code => TerminationStatus
-    CPXERR_NO_MEMORY => MOI.MEMORY_LIMIT,
+    COPT_RETCODE_MEMORY => MOI.MEMORY_LIMIT,
 ])
 
 # Same as _check_ret, but deals with the `model.ret_optimize` machinery.
@@ -167,8 +158,11 @@ set_optimizer_attribute(model, CPLEX.PassNames(), true)
 """
 mutable struct Optimizer <: MOI.AbstractOptimizer
     # The low-level CPLEX model.
-    lp::CPXLPptr
+    prob::Ptr{copt_prob}
     env::Env
+
+    # Model name, not used by COPT.
+    name::String
 
     # A flag to keep track of MOI.Silent, which over-rides the OutputFlag
     # parameter.
@@ -258,9 +252,10 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
     function Optimizer(env::Union{Nothing,Env} = nothing)
         model = new()
-        model.lp = C_NULL
+        model.prob = C_NULL
         model.env = env === nothing ? Env() : env
-        MOI.set(model, MOI.RawOptimizerAttribute("CPXPARAM_ScreenOutput"), 1)
+        model.name = ""
+        MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
         model.silent = false
         model.variable_primal = nothing
 
@@ -276,7 +271,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         model.pass_names = false
         MOI.empty!(model)
         finalizer(model) do m
-            ret = CPXfreeprob(m.env, Ref(m.lp))
+            ret = COPT_DeleteProb(Ref(m.prob))
             _check_ret(m, ret)
             m.env.attached_models -= 1
             if env === nothing
@@ -285,7 +280,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
             elseif m.env.finalize_called && m.env.attached_models == 0
                 # We delayed finalizing `m.env` earlier because there were still
                 # models attached. Finalize it now.
-                CPXcloseCPLEX(Ref(m.env.ptr))
+                COPT_CloseEnv(Ref(m.env.ptr))
                 m.env.ptr = C_NULL
             end
         end
@@ -295,24 +290,22 @@ end
 
 _check_ret(model::Optimizer, ret::Cint) = _check_ret(model.env, ret)
 
-Base.show(io::IO, model::Optimizer) = show(io, model.lp)
+Base.show(io::IO, model::Optimizer) = show(io, model.prob)
 
 function MOI.empty!(model::Optimizer)
-    if model.lp != C_NULL
-        ret = CPXfreeprob(model.env, Ref(model.lp))
+    if model.prob != C_NULL
+        ret = COPT_DeleteProb(Ref(model.prob))
         _check_ret(model.env, ret)
         model.env.attached_models -= 1
     end
     # Try open a new problem
-    stat = Ref{Cint}()
-    tmp = CPXcreateprob(model.env, stat, "")
-    if tmp == C_NULL
-        _check_ret(model.env, stat[])
-    end
+    p_ptr = Ref{Ptr{copt_prob}}(C_NULL)
+    ret = COPT_CreateProb(model.env.ptr, p_ptr)
+    _check_ret(model.env, ret)
+    model.prob = p_ptr[]
     model.env.attached_models += 1
-    model.lp = tmp
     if model.silent
-        MOI.set(model, MOI.RawOptimizerAttribute("CPXPARAM_ScreenOutput"), 0)
+        MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 0)
     end
     model.objective_type = _UNSET_OBJECTIVE
     model.objective_sense = nothing
@@ -372,9 +365,9 @@ function MOI.set(model::Optimizer, ::PassNames, value::Bool)
     return
 end
 
-MOI.get(::Optimizer, ::MOI.SolverName) = "CPLEX"
+MOI.get(::Optimizer, ::MOI.SolverName) = "COPT"
 
-MOI.get(::Optimizer, ::MOI.SolverVersion) = string(_CPLEX_VERSION)
+MOI.get(::Optimizer, ::MOI.SolverVersion) = string(_COPT_VERSION)
 
 function MOI.supports(
     ::Optimizer,
@@ -459,72 +452,62 @@ MOI.supports(::Optimizer, ::MOI.TimeLimitSec) = true
 MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
 MOI.supports(::Optimizer, ::MOI.RawOptimizerAttribute) = true
 
+"""
+    _search_param_attr(model::Optimizer, name::AbstractString) -> Int
+
+Returns the type of a COPT parameter or attribute, given its name.
+-1: unknown
+ 0: double parameter
+ 1: int parameter
+ 2: double attribute
+ 3: int attribute
+"""
+function _search_param_attr(model::Optimizer, name::AbstractString)
+    # Use undocumented COPT function
+    # int COPT_SearchParamAttr(copt_prob* prob, const char* name, int* p_type)
+    p_type = Ref{Cint}()
+    ret = ccall((:COPT_SearchParamAttr, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), model.prob, name, p_type)
+    _check_ret(model, ret)
+    return convert(Int, p_type[])
+end
+
 function MOI.set(model::Optimizer, param::MOI.RawOptimizerAttribute, value)
-    numP, typeP = Ref{Cint}(), Ref{Cint}()
-    ret = CPXgetparamnum(model.env, param.name, numP)
-    _check_ret(model.env, ret)
-    ret = CPXgetparamtype(model.env, numP[], typeP)
-    _check_ret(model.env, ret)
-    ret = if typeP[] == CPX_PARAMTYPE_NONE
-        Cint(0)
-    elseif typeP[] == CPX_PARAMTYPE_INT
-        CPXsetintparam(model.env, numP[], value)
-    elseif typeP[] == CPX_PARAMTYPE_DOUBLE
-        CPXsetdblparam(model.env, numP[], value)
-    elseif typeP[] == CPX_PARAMTYPE_STRING
-        CPXsetstrparam(model.env, numP[], value)
+    param_type = _search_param_attr(model, param.name)
+    if param_type == 0
+        ret = COPT_SetDblParam(model.prob, param.name, value)
+        _check_ret(model, ret)
+    elseif param_type == 1
+        ret = COPT_SetIntParam(model.prob, param.name, value)
+        _check_ret(model, ret)
     else
-        @assert typeP[] == CPX_PARAMTYPE_LONG
-        CPXsetlongparam(model.env, numP[], value)
+        throw(MOI.UnsupportedAttribute(param))
     end
-    _check_ret(model.env, ret)
-    return
 end
 
 function MOI.get(model::Optimizer, param::MOI.RawOptimizerAttribute)
-    numP, typeP = Ref{Cint}(), Ref{Cint}()
-    ret = CPXgetparamnum(model.env, param.name, numP)
-    _check_ret(model.env, ret)
-    ret = CPXgetparamtype(model.env, numP[], typeP)
-    _check_ret(model.env, ret)
-    if typeP[] == CPX_PARAMTYPE_NONE
-        Cint(0)
-    elseif typeP[] == CPX_PARAMTYPE_INT
-        valueP = Ref{Cint}()
-        ret = CPXgetintparam(model.env, numP[], valueP)
-        _check_ret(model.env, ret)
-        return Int(valueP[])
-    elseif typeP[] == CPX_PARAMTYPE_DOUBLE
-        valueP = Ref{Cdouble}()
-        ret = CPXgetdblparam(model.env, numP[], valueP)
-        _check_ret(model.env, ret)
-        return valueP[]
-    elseif typeP[] == CPX_PARAMTYPE_STRING
-        buffer = Array{Cchar}(undef, CPXMESSAGEBUFSIZE)
-        valueP = pointer(buffer)
-        GC.@preserve buffer begin
-            ret = CPXgetstrparam(model.env, numP[], valueP)
-            _check_ret(model, ret)
-            return unsafe_string(valueP)
-        end
+    param_type = _search_param_attr(model, param.name)
+    if param_type == 0
+        p_value = Ref{Cdouble}()
+        ret = COPT_GetDblParam(model.prob, param.name, p_value)
+        _check_ret(model, ret)
+        return p_value[]
+    elseif param_type == 1
+        p_value = Ref{Cint}()
+        ret = COPT_GetIntParam(model.prob, param.name, p_value)
+        _check_ret(model, ret)
+        return p_value[]
     else
-        @assert typeP[] == CPX_PARAMTYPE_LONG
-        valueP = Ref{CPXLONG}()
-        ret = CPXgetlongparam(model.env, numP[], valueP)
-        _check_ret(model.env, ret)
-        return valueP[]
+        throw(MOI.UnsupportedAttribute(param))
     end
-    _check_ret(model.env, ret)
-    return
 end
 
 function MOI.set(model::Optimizer, ::MOI.TimeLimitSec, limit::Real)
-    MOI.set(model, MOI.RawOptimizerAttribute("CPXPARAM_TimeLimit"), limit)
+    MOI.set(model, MOI.RawOptimizerAttribute("TimeLimit"), limit)
     return
 end
 
 function MOI.get(model::Optimizer, ::MOI.TimeLimitSec)
-    return MOI.get(model, MOI.RawOptimizerAttribute("CPXPARAM_TimeLimit"))
+    return MOI.get(model, MOI.RawOptimizerAttribute("TimeLimit"))
 end
 
 MOI.supports_incremental_interface(::Optimizer) = true
@@ -697,31 +680,13 @@ function MOI.add_variable(model::Optimizer)
     info = _info(model, index)
     info.index = index
     info.column = length(model.variable_info)
-    ret = CPXnewcols(
-        model.env,
-        model.lp,
-        1,
-        C_NULL,
-        [-Inf],
-        C_NULL,
-        C_NULL,
-        C_NULL,
-    )
+    ret = COPT_AddCol(model.prob, 0.0, 0, C_NULL, C_NULL, COPT_CONTINUOUS, -Inf, Inf, "")
     _check_ret(model, ret)
     return index
 end
 
 function MOI.add_variables(model::Optimizer, N::Int)
-    ret = CPXnewcols(
-        model.env,
-        model.lp,
-        N,
-        C_NULL,
-        fill(-Inf, N),
-        C_NULL,
-        C_NULL,
-        C_NULL,
-    )
+    ret = COPT_AddCols(model.prob, N, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, fill(-Inf, N), C_NULL, C_NULL)
     _check_ret(model, ret)
     indices = Vector{MOI.VariableIndex}(undef, N)
     num_variables = length(model.variable_info)
@@ -769,12 +734,8 @@ function MOI.delete(model::Optimizer, indices::Vector{<:MOI.VariableIndex})
     sorted_del_cols = sort!(collect(i.column for i in info))
     starts, ends = _intervalize(sorted_del_cols)
     for ri in reverse(1:length(starts))
-        ret = CPXdelcols(
-            model.env,
-            model.lp,
-            Cint(starts[ri] - 1),
-            Cint(ends[ri] - 1),
-        )
+        col_list = convert(Vector{Cint}, (starts[ri]-1):(ends[ri]-1))
+        ret = COPT_DelCols(model.prob, length(col_list), col_list)
         _check_ret(model, ret)
     end
     for var_idx in indices
@@ -804,12 +765,7 @@ function MOI.delete(model::Optimizer, v::MOI.VariableIndex)
     if info.num_soc_constraints > 0
         throw(MOI.DeleteNotAllowed(v))
     end
-    ret = CPXdelcols(
-        model.env,
-        model.lp,
-        Cint(info.column - 1),
-        Cint(info.column - 1),
-    )
+    ret = COPT_DelCols(model.prob, 1, [Cint(info.column - 1)])
     _check_ret(model, ret)
     delete!(model.variable_info, v)
     for other_info in values(model.variable_info)
@@ -865,13 +821,7 @@ function MOI.set(
 )
     info = _info(model, v)
     if model.pass_names && info.name != name && isascii(name)
-        ret = CPXchgname(
-            model.env,
-            model.lp,
-            Cchar('c'),
-            Cint(info.column - 1),
-            name,
-        )
+        ret = COPT_SetColNames(model.prob, 1, [Cint(info.column - 1)], [name])
         _check_ret(model, ret)
     end
     info.name = name
@@ -884,15 +834,13 @@ end
 ###
 
 function _zero_objective(model::Optimizer)
+    ret = COPT_DelQuadObj(model.prob)
+    _check_ret(model, ret)
     num_vars = length(model.variable_info)
-    n = fill(Cint(0), num_vars)
-    ret = CPXcopyquad(model.env, model.lp, n, n, Cint[], Cdouble[])
-    _check_ret(model, ret)
-    ind = convert(Vector{Cint}, 0:(num_vars-1))
     obj = zeros(Float64, num_vars)
-    ret = CPXchgobj(model.env, model.lp, length(ind), ind, obj)
+    ret = COPT_SetColObj(model.prob, num_vars, C_NULL, obj)
     _check_ret(model, ret)
-    ret = CPXchgobjoffset(model.env, model.lp, 0.0)
+    ret = COPT_SetObjConst(model.prob, 0.0)
     _check_ret(model, ret)
     return
 end
@@ -903,13 +851,13 @@ function MOI.set(
     sense::MOI.OptimizationSense,
 )
     ret = if sense == MOI.MIN_SENSE
-        CPXchgobjsen(model.env, model.lp, CPX_MIN)
+        COPT_SetObjSense(model.prob, COPT_MINIMIZE)
     elseif sense == MOI.MAX_SENSE
-        CPXchgobjsen(model.env, model.lp, CPX_MAX)
+        COPT_SetObjSense(model.prob, COPT_MAXIMIZE)
     else
         @assert sense == MOI.FEASIBILITY_SENSE
         _zero_objective(model)
-        CPXchgobjsen(model.env, model.lp, CPX_MIN)
+        COPT_SetObjSense(model.prob, COPT_MINIMIZE)
     end
     _check_ret(model, ret)
     model.objective_sense = sense
@@ -950,14 +898,7 @@ function MOI.set(
     num_vars = length(model.variable_info)
     if model.objective_type == _SCALAR_QUADRATIC
         # We need to zero out the existing quadratic objective.
-        ret = CPXcopyquad(
-            model.env,
-            model.lp,
-            fill(Cint(0), num_vars),
-            fill(Cint(0), num_vars),
-            Ref{Cint}(),
-            Ref{Cdouble}(),
-        )
+        ret = COPT_DelQuadObj(model.prob)
         _check_ret(model, ret)
     end
     obj = zeros(Float64, num_vars)
@@ -965,10 +906,9 @@ function MOI.set(
         col = column(model, term.variable)
         obj[col] += term.coefficient
     end
-    ind = convert(Vector{Cint}, 0:(num_vars-1))
-    ret = CPXchgobj(model.env, model.lp, num_vars, ind, obj)
+    ret = COPT_SetColObj(model.prob, num_vars, C_NULL, obj)
     _check_ret(model, ret)
-    ret = CPXchgobjoffset(model.env, model.lp, f.constant)
+    ret = COPT_SetObjConst(model.prob, f.constant)
     _check_ret(model, ret)
     model.objective_type = _SCALAR_AFFINE
     return
@@ -984,7 +924,7 @@ function MOI.get(
         )
     end
     dest = zeros(length(model.variable_info))
-    ret = CPXgetobj(model.env, model.lp, dest, Cint(0), Cint(length(dest) - 1))
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_OBJ, length(dest), C_NULL, dest)
     _check_ret(model, ret)
     terms = MOI.ScalarAffineTerm{Float64}[]
     for (index, info) in model.variable_info
@@ -994,7 +934,7 @@ function MOI.get(
         end
     end
     constant = Ref{Cdouble}()
-    ret = CPXgetobjoffset(model.env, model.lp, constant)
+    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, constant)
     _check_ret(model, ret)
     return MOI.ScalarAffineFunction(terms, constant[])
 end
@@ -1010,21 +950,11 @@ function MOI.set(
     for (i, c) in zip(a, b)
         obj[i+1] += c
     end
-    ind = convert(Vector{Cint}, 0:(n-1))
-    ret = CPXchgobj(model.env, model.lp, n, ind, obj)
+    ret = COPT_SetColObj(model.prob, n, C_NULL, obj)
     _check_ret(model, ret)
-    ret = CPXchgobjoffset(model.env, model.lp, f.constant)
+    ret = COPT_SetObjConst(model.prob, f.constant)
     _check_ret(model, ret)
-    Q = SparseArrays.sparse(I .+ 1, J .+ 1, V, n, n)
-    Q = Q .+ Q'
-    ret = CPXcopyquad(
-        model.env,
-        model.lp,
-        convert(Vector{Cint}, Q.colptr .- 1),
-        Cint[Q.colptr[k+1] - Q.colptr[k] for k in 1:n],
-        convert(Vector{Cint}, Q.rowval .- 1),
-        Q.nzval,
-    )
+    COPT_SetQuadObj(model.prob, length(I), I, J, V)
     _check_ret(model, ret)
     model.objective_type = _SCALAR_QUADRATIC
     return
@@ -1035,7 +965,7 @@ function MOI.get(
     ::MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}},
 )
     dest = zeros(length(model.variable_info))
-    ret = CPXgetobj(model.env, model.lp, dest, Cint(0), Cint(length(dest) - 1))
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_OBJ, length(dest), C_NULL, dest)
     _check_ret(model, ret)
     terms = MOI.ScalarAffineTerm{Float64}[]
     for (index, info) in model.variable_info
@@ -1044,49 +974,30 @@ function MOI.get(
         push!(terms, MOI.ScalarAffineTerm(coefficient, index))
     end
     constant = Ref{Cdouble}()
-    ret = CPXgetobjoffset(model.env, model.lp, constant)
+    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, constant)
     _check_ret(model, ret)
+    p_numqnz = Ref{Cint}()
+    ret = COPT_GetIntAttr(model.prob, COPT_INTATTR_QELEMS, p_numqnz)
+    _check_ret(model, ret)
+    qrow = Array{Cint}(undef, p_numqnz[])
+    qcol = Array{Cint}(undef, p_numqnz[])
+    qval = Array{Float64}(undef, p_numqnz[])
+    ret = COPT_GetQuadObj(model.prob, p_numqnz, qrow, qcol, qval)
+    _check_ret(model, ret)
+    @assert p_numqnz[] == length(qval)
     q_terms = MOI.ScalarQuadraticTerm{Float64}[]
-    surplus_p = Ref{Cint}()
-    ret = CPXgetquad(
-        model.env,
-        model.lp,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        surplus_p,
-        0,
-        length(dest) - 1,
-    )
-    qmatbeg = Vector{Cint}(undef, length(dest))
-    qmatind = Vector{Cint}(undef, -surplus_p[])
-    qmatval = Vector{Cdouble}(undef, -surplus_p[])
-    nzcnt_p = Ref{Cint}()
-    ret = CPXgetquad(
-        model.env,
-        model.lp,
-        nzcnt_p,
-        qmatbeg,
-        qmatind,
-        qmatval,
-        -surplus_p[],
-        surplus_p,
-        0,
-        length(dest) - 1,
-    )
-    row = 0
-    for (i, (col, val)) in enumerate(zip(qmatind, qmatval))
-        if row < length(qmatbeg) && i == (qmatbeg[row+1] + 1)
-            row += 1
+    for (i, j, v) in zip(qrow, qcol, qval)
+        if iszero(v)
+            continue
         end
+        # See note in `_indices_and_coefficients`.
+        new_v = i == j ? 2v : v
         push!(
             q_terms,
             MOI.ScalarQuadraticTerm(
-                row == col + 1 ? val : 0.5 * val,
-                model.variable_info[CleverDicts.LinearIndex(row)].index,
-                model.variable_info[CleverDicts.LinearIndex(col + 1)].index,
+                new_v,
+                model.variable_info[CleverDicts.LinearIndex(i + 1)].index,
+                model.variable_info[CleverDicts.LinearIndex(j + 1)].index,
             ),
         )
     end
@@ -1100,7 +1011,7 @@ function MOI.modify(
     ::MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}},
     chg::MOI.ScalarConstantChange{Float64},
 )
-    ret = CPXchgobjoffset(model.env, model.lp, chg.new_constant)
+    ret = COPT_SetObjConst(model.prob, chg.new_constant)
     _check_ret(model, ret)
     return
 end
@@ -1178,7 +1089,7 @@ function MOI.is_valid(
     c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.ZeroOne},
 )
     return haskey(model.variable_info, MOI.VariableIndex(c.value)) &&
-           _info(model, c).type == CPX_BINARY
+           _info(model, c).type == COPT_BINARY
 end
 
 function MOI.is_valid(
@@ -1186,7 +1097,7 @@ function MOI.is_valid(
     c::MOI.ConstraintIndex{MOI.VariableIndex,MOI.Integer},
 )
     return haskey(model.variable_info, MOI.VariableIndex(c.value)) &&
-           _info(model, c).type == CPX_INTEGER
+           _info(model, c).type == COPT_INTEGER
 end
 
 function MOI.is_valid(
@@ -1344,25 +1255,28 @@ function _set_bounds(
     indices::Vector{MOI.ConstraintIndex{MOI.VariableIndex,S}},
     sets::Vector{S},
 ) where {S}
-    columns, senses, values = Cint[], Cchar[], Float64[]
+    lower_columns, lower_values = Cint[], Float64[]
+    upper_columns, upper_values = Cint[], Float64[]
     for (c, s) in zip(indices, sets)
         lower, upper = _bounds(s)
         info = _info(model, c)
         if lower !== nothing
-            push!(columns, Cint(info.column - 1))
-            push!(senses, Cchar('L'))
-            push!(values, lower)
+            push!(lower_columns, Cint(info.column - 1))
+            push!(lower_values, lower)
         end
         if upper !== nothing
-            push!(columns, Cint(info.column - 1))
-            push!(senses, Cchar('U'))
-            push!(values, upper)
+            push!(upper_columns, Cint(info.column - 1))
+            push!(upper_values, upper)
         end
     end
-    ret =
-        CPXchgbds(model.env, model.lp, length(columns), columns, senses, values)
-    _check_ret(model, ret)
-    return
+    if length(lower_columns) > 0
+        ret = COPT_SetColLower(model.prob, length(lower_columns), lower_columns, lower_values)
+        _check_ret(model, ret)
+    end
+    if length(upper_columns) > 0
+        ret = COPT_SetColUpper(model.prob, length(upper_columns), upper_columns, upper_values)
+        _check_ret(model, ret)
+    end
 end
 
 function MOI.delete(
@@ -1395,27 +1309,13 @@ function _set_variable_lower_bound(model, info, value)
     if info.num_soc_constraints == 0
         # No SOC constraints, set directly.
         @assert isnan(info.lower_bound_if_soc)
-        ret = CPXchgbds(
-            model.env,
-            model.lp,
-            1,
-            Ref{Cint}(info.column - 1),
-            Ref{Cchar}('L'),
-            Ref(value),
-        )
+        ret = COPT_SetColLower(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cdouble}(value))
         _check_ret(model, ret)
     elseif value >= 0.0
         # Regardless of whether there are SOC constraints, this is a valid bound
         # for the SOC constraint and should over-ride any previous bounds.
         info.lower_bound_if_soc = NaN
-        ret = CPXchgbds(
-            model.env,
-            model.lp,
-            1,
-            Ref{Cint}(info.column - 1),
-            Ref{Cchar}('L'),
-            Ref(value),
-        )
+        ret = COPT_SetColLower(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cdouble}(value))
         _check_ret(model, ret)
     elseif isnan(info.lower_bound_if_soc)
         # Previously, we had a non-negative lower bound (i.e., it was set in the
@@ -1423,14 +1323,7 @@ function _set_variable_lower_bound(model, info, value)
         # still some SOC constraints, so we cache `value` and set the variable
         # lower bound to `0.0`.
         @assert value < 0.0
-        ret = CPXchgbds(
-            model.env,
-            model.lp,
-            1,
-            Ref{Cint}(info.column - 1),
-            Ref{Cchar}('L'),
-            Ref(0.0),
-        )
+        ret = COPT_SetColLower(model.prob, 1, Ref{Cint}(info.column - 1), Ref(0.0))
         _check_ret(model, ret)
         info.lower_bound_if_soc = value
     else
@@ -1457,41 +1350,22 @@ function _get_variable_lower_bound(model, info)
         return info.lower_bound_if_soc
     end
     lb = Ref{Cdouble}()
-    ret = CPXgetlb(
-        model.env,
-        model.lp,
-        lb,
-        Cint(info.column - 1),
-        Cint(info.column - 1),
-    )
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_LB, 1, Ref{Cint}(info.column - 1), lb)
     _check_ret(model, ret)
-    return lb[] == -CPX_INFBOUND ? -Inf : lb[]
+    return lb[] == -COPT_INFINITY ? -Inf : lb[]
 end
 
 function _set_variable_upper_bound(model, info, value)
-    ret = CPXchgbds(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}('U'),
-        Ref(value),
-    )
+    ret = COPT_SetColUpper(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cdouble}(value))
     _check_ret(model, ret)
     return
 end
 
 function _get_variable_upper_bound(model, info)
     ub = Ref{Cdouble}()
-    ret = CPXgetub(
-        model.env,
-        model.lp,
-        ub,
-        Cint(info.column - 1),
-        Cint(info.column - 1),
-    )
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_UB, 1, Ref{Cint}(info.column - 1), ub)
     _check_ret(model, ret)
-    return ub[] == CPX_INFBOUND ? Inf : ub[]
+    return ub[] == COPT_INFINITY ? Inf : ub[]
 end
 
 function MOI.delete(
@@ -1604,28 +1478,24 @@ function MOI.add_constraint(
     info = _info(model, f)
     col = Cint(info.column - 1)
     p_col = Ref(col)
-    ret = CPXchgctype(model.env, model.lp, 1, p_col, Ref{Cchar}(CPX_BINARY))
+    ret = COPT_SetColType(model.prob, 1, p_col, Ref{Cchar}(COPT_BINARY))
+    _check_ret(model, ret)
     # Round bounds to avoid the CPLEX warning:
     #   Warning:  Non-integral bounds for integer variables rounded.
     # See issue https://github.com/jump-dev/CPLEX.jl/issues/311
-    ret = if info.bound == _NONE
-        CPXchgbds(
-            model.env,
-            model.lp,
-            2,
-            Cint[col, col],
-            Cchar['L', 'U'],
-            [0.0, 1.0],
-        )
+    if info.bound == _NONE
+        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(0.0))
+        _check_ret(model, ret)
+        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(1.0))
+        _check_ret(model, ret)
     elseif info.bound == _GREATER_THAN
-        CPXchgbds(model.env, model.lp, 1, p_col, Ref{Cchar}('U'), Ref(1.0))
+        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(1.0))
+        _check_ret(model, ret)
     elseif info.bound == _LESS_THAN
-        CPXchgbds(model.env, model.lp, 1, p_col, Ref{Cchar}('L'), Ref(0.0))
-    else
-        Cint(0)
+        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(0.0))
+        _check_ret(model, ret)
     end
-    _check_ret(model, ret)
-    info.type = CPX_BINARY
+    info.type = COPT_BINARY
     return MOI.ConstraintIndex{MOI.VariableIndex,MOI.ZeroOne}(f.value)
 end
 
@@ -1636,50 +1506,26 @@ function MOI.delete(
     MOI.throw_if_not_valid(model, c)
     info = _info(model, c)
     col = Cint(info.column - 1)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref(col),
-        Ref{Cchar}(CPX_CONTINUOUS),
-    )
+    p_col = Ref(col)
+    ret = COPT_SetColType(model.prob, 1, p_col, Ref{Cchar}(COPT_CONTINUOUS))
     _check_ret(model, ret)
     # When deleting the ZeroOne bound, reset any bounds that were added. If no
     # _NONE, we added '[0, 1]'. If _GREATER_THAN, we added '1]', if _LESS_THAN,
     # we added '[0'. If it is anything else, both bounds were set by the user,
     # so we don't need to worry.
-    ret = if info.bound == _NONE
-        CPXchgbds(
-            model.env,
-            model.lp,
-            2,
-            [col, col],
-            Cchar['L', 'U'],
-            [-CPX_INFBOUND, CPX_INFBOUND],
-        )
+    if info.bound == _NONE
+        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(-COPT_INFINITY))
+        _check_ret(model, ret)
+        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(+COPT_INFINITY))
+        _check_ret(model, ret)
     elseif info.bound == _GREATER_THAN
-        CPXchgbds(
-            model.env,
-            model.lp,
-            1,
-            Ref(col),
-            Ref{Cchar}('U'),
-            Ref(CPX_INFBOUND),
-        )
+        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(+COPT_INFINITY))
+        _check_ret(model, ret)
     elseif info.bound == _LESS_THAN
-        CPXchgbds(
-            model.env,
-            model.lp,
-            1,
-            Ref(col),
-            Ref{Cchar}('L'),
-            Ref(-CPX_INFBOUND),
-        )
-    else
-        Cint(0)
+        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(-COPT_INFINITY))
+        _check_ret(model, ret)
     end
-    _check_ret(model, ret)
-    info.type = CPX_CONTINUOUS
+    info.type = COPT_CONTINUOUS
     model.name_to_constraint_index = nothing
     return
 end
@@ -1699,15 +1545,9 @@ function MOI.add_constraint(
     ::MOI.Integer,
 )
     info = _info(model, f)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}(CPX_INTEGER),
-    )
+    ret = COPT_SetColType(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cchar}(COPT_INTEGER))
     _check_ret(model, ret)
-    info.type = CPX_INTEGER
+    info.type = COPT_INTEGER
     return MOI.ConstraintIndex{MOI.VariableIndex,MOI.Integer}(f.value)
 end
 
@@ -1717,15 +1557,9 @@ function MOI.delete(
 )
     MOI.throw_if_not_valid(model, c)
     info = _info(model, c)
-    ret = CPXchgctype(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(info.column - 1),
-        Ref{Cchar}(CPX_CONTINUOUS),
-    )
+    ret = COPT_SetColType(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cchar}(COPT_CONTINUOUS))
     _check_ret(model, ret)
-    info.type = CPX_CONTINUOUS
+    info.type = COPT_CONTINUOUS
     model.name_to_constraint_index = nothing
     return
 end
@@ -1900,20 +1734,7 @@ function MOI.add_constraint(
         _ConstraintInfo(length(model.affine_constraint_info) + 1, s)
     indices, coefficients = _indices_and_coefficients(model, f)
     sense, rhs = _sense_and_rhs(s)
-    ret = CPXaddrows(
-        model.env,
-        model.lp,
-        0,
-        1,
-        length(indices),
-        Ref(rhs),
-        Ref{Cchar}(sense),
-        Cint[0, length(indices)],
-        indices,
-        coefficients,
-        C_NULL,
-        C_NULL,
-    )
+    ret = COPT_AddRows(model.prob, 1, Ref{Cint}(0), Ref{Cint}(length(indices)), indices, coefficients, Ref{Cchar}(sense), Ref{Cdouble}(rhs), C_NULL, C_NULL)
     _check_ret(model, ret)
     return MOI.ConstraintIndex{typeof(f),typeof(s)}(model.last_constraint_index)
 end
@@ -1970,21 +1791,7 @@ function MOI.add_constraints(
         model.affine_constraint_info[model.last_constraint_index] =
             _ConstraintInfo(length(model.affine_constraint_info) + 1, si)
     end
-    pop!(row_starts)
-    ret = CPXaddrows(
-        model.env,
-        model.lp,
-        0,
-        length(f),
-        length(coefficients),
-        rhss,
-        senses,
-        row_starts,
-        columns,
-        coefficients,
-        C_NULL,
-        C_NULL,
-    )
+    ret = COPT_AddRows(model.prob, length(f), row_starts, C_NULL, columns, coefficients, senses, rhss, C_NULL, C_NULL)
     _check_ret(model, ret)
     return indices
 end
@@ -1994,7 +1801,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},<:Any},
 )
     row = _info(model, c).row
-    ret = CPXdelrows(model.env, model.lp, Cint(row - 1), Cint(row - 1))
+    ret = COPT_DelRows(model.prob, 1, Ref{Cint}(row - 1))
     _check_ret(model, ret)
     for (key, info) in model.affine_constraint_info
         if info.row > row
@@ -2006,15 +1813,48 @@ function MOI.delete(
     return
 end
 
+function _copt_get_row_lower(model::Optimizer, copt_row::Cint)
+    value = Ref{Cdouble}()
+    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_LB, 1, [copt_row], value)
+    _check_ret(model, ret)
+    return value[] == -COPT_INFINITY ? -Inf : value[]
+end
+
+function _copt_get_row_upper(model::Optimizer, copt_row::Cint)
+    value = Ref{Cdouble}()
+    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_LB, 1, [copt_row], value)
+    _check_ret(model, ret)
+    return value[] == +COPT_INFINITY ? +Inf : value[]
+end
+
+function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
+    if value == -Inf
+        value = -COPT_INFINITY
+    end
+    ret = COPT_SetRowLower(model.prob, 1, [copt_row], Ref{Cdouble}(value))
+    _check_ret(model, ret)
+end
+
+function _copt_set_row_upper(model::Optimizer, copt_row::Cint, value)
+    if value == +Inf
+        value = +COPT_INFINITY
+    end
+    ret = COPT_SetRowUpper(model.prob, 1, [copt_row], Ref{Cdouble}(value))
+    _check_ret(model, ret)
+end
+
 function MOI.get(
     model::Optimizer,
     ::MOI.ConstraintSet,
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},S},
 ) where {S}
-    rhs = Ref{Cdouble}()
     row = _info(model, c).row
-    ret = CPXgetrhs(model.env, model.lp, rhs, Cint(row - 1), Cint(row - 1))
-    return S(rhs[])
+    rhs = if S <: MOI.LessThan{Float64}
+        _copt_get_row_upper(model, Cint(row - 1))
+    else
+        _copt_get_row_lower(model, Cint(row - 1))
+    end
+    return S(rhs)
 end
 
 function MOI.set(
@@ -2023,15 +1863,17 @@ function MOI.set(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},S},
     s::S,
 ) where {S}
-    ret = CPXchgrhs(
-        model.env,
-        model.lp,
-        1,
-        Ref{Cint}(_info(model, c).row - 1),
-        Ref(MOI.constant(s)),
-    )
-    _check_ret(model, ret)
-    return
+    row = _info(model, c).row
+    rhs = MOI.constant(s)
+    if S <: MOI.GreaterThan{Float64}
+        _copt_set_row_lower(model, Cint(row - 1), rhs)
+    elseif S <: MOI.LessThan{Float64}
+        _copt_set_row_upper(model, Cint(row - 1), rhs)
+    else
+        @assert S <: MOI.EqualTo{Float64}
+        _copt_set_row_lower(model, Cint(row - 1), rhs)
+        _copt_set_row_upper(model, Cint(row - 1), rhs)
+    end
 end
 
 function MOI.get(
@@ -2040,38 +1882,17 @@ function MOI.get(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},S},
 ) where {S}
     row = Cint(_info(model, c).row - 1)
-    surplus_p = Ref{Cint}()
-    CPXgetrows(
-        model.env,
-        model.lp,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        surplus_p,
-        row,
-        row,
-    )
+    p_reqsize = Ref{Cint}()
+    ret = COPT_GetRows(model.prob, 1, [row], C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
     rmatbeg = Vector{Cint}(undef, 2)
-    rmatind = Vector{Cint}(undef, -surplus_p[])
-    rmatval = Vector{Cdouble}(undef, -surplus_p[])
-    nzcnt_p = Ref{Cint}()
-    ret = CPXgetrows(
-        model.env,
-        model.lp,
-        nzcnt_p,
-        rmatbeg,
-        rmatind,
-        rmatval,
-        -surplus_p[],
-        surplus_p,
-        row,
-        row,
-    )
+    rmatind = Vector{Cint}(undef, num_elem)
+    rmatval = Vector{Cdouble}(undef, num_elem)
+    ret = COPT_GetRows(model.prob, 1, [row], rmatbeg, C_NULL, rmatind, rmatval, num_elem, C_NULL)
     _check_ret(model, ret)
     terms = MOI.ScalarAffineTerm{Float64}[]
-    for i in 1:nzcnt_p[]
+    for i in 1:rmatbeg[2]
         push!(
             terms,
             MOI.ScalarAffineTerm(
@@ -2101,13 +1922,7 @@ function MOI.set(
 )
     info = _info(model, c)
     if model.pass_names && info.name != name && isascii(name)
-        ret = CPXchgname(
-            model.env,
-            model.lp,
-            Cchar('r'),
-            Cint(info.row - 1),
-            name,
-        )
+        ret = COPT_SetRowNames(model.prob, 1, Ref{Cint}(info.row - 1), [name])
         _check_ret(model, ret)
     end
     info.name = name
@@ -2204,20 +2019,7 @@ function MOI.add_constraint(
     end
     indices, coefficients, I, J, V = _indices_and_coefficients(model, f)
     sense, rhs = _sense_and_rhs(s)
-    ret = CPXaddqconstr(
-        model.env,
-        model.lp,
-        length(indices),
-        length(V),
-        rhs,
-        sense,
-        indices,
-        coefficients,
-        I,
-        J,
-        V,
-        C_NULL,
-    )
+    ret = COPT_AddQConstr(model.prob, length(indices), indices, coefficients, length(V), I, J, V, sense, rhs, C_NULL)
     _check_ret(model, ret)
     model.last_constraint_index += 1
     model.quadratic_constraint_info[model.last_constraint_index] =
@@ -2240,12 +2042,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
     info = _info(model, c)
-    ret = CPXdelqconstrs(
-        model.env,
-        model.lp,
-        Cint(info.row - 1),
-        Cint(info.row - 1),
-    )
+    ret = COPT_DelQConstrs(model.prob, 1, Ref{Cint}(info.row - 1))
     _check_ret(model, ret)
     for (key, info_2) in model.quadratic_constraint_info
         if info_2.row > info.row
@@ -2262,72 +2059,27 @@ function MOI.get(
     ::MOI.ConstraintSet,
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
+    row = Cint(_info(model, c).row - 1)
     rhs_p = Ref{Cdouble}()
-    ret = CPXgetqconstr(
-        model.env,
-        model.lp,
-        C_NULL,
-        C_NULL,
-        rhs_p,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        C_NULL,
-        Cint(_info(model, c).row - 1),
-    )
+    ret = COPT_GetQConstrRhs(model.prob, 1, [row], rhs)
+    _check_ret(model, ret)
     return S(rhs_p[])
 end
 
-function _CPXgetqconstr(model::Optimizer, c::MOI.ConstraintIndex)
+function _copt_getqconstr(model::Optimizer, c::MOI.ConstraintIndex)
     row = Cint(_info(model, c).row - 1)
-    linsurplus_p, quadsurplus_p = Ref{Cint}(), Ref{Cint}()
-    CPXgetqconstr(
-        model.env,
-        model.lp,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        linsurplus_p,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        quadsurplus_p,
-        row,
-    )
-    linind = Vector{Cint}(undef, -linsurplus_p[])
-    linval = Vector{Cdouble}(undef, -linsurplus_p[])
-    quadrow = Vector{Cint}(undef, -quadsurplus_p[])
-    quadcol = Vector{Cint}(undef, -quadsurplus_p[])
-    quadval = Vector{Cdouble}(undef, -quadsurplus_p[])
-    ret = CPXgetqconstr(
-        model.env,
-        model.lp,
-        Ref{Cint}(),
-        Ref{Cint}(),
-        Ref{Cdouble}(),
-        Ref{Cchar}(),
-        linind,
-        linval,
-        -linsurplus_p[],
-        linsurplus_p,
-        quadrow,
-        quadcol,
-        quadval,
-        -quadsurplus_p[],
-        quadsurplus_p,
-        row,
-    )
+    p_reqsize = Ref{Cint}()
+    p_qreqsize = Ref{Cint}()
+    ret = COPT_GetQConstr(model.prob, row, C_NULL, C_NULL, C_NULL, 0, p_qreqsize, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
+    num_qelem = p_qreqsize[]
+    linind = Vector{Cint}(undef, num_elem)
+    linval = Vector{Cdouble}(undef, num_elem)
+    quadrow = Vector{Cint}(undef, num_qelem)
+    quadcol = Vector{Cint}(undef, num_qelem)
+    quadval = Vector{Cdouble}(undef, num_qelem)
+    ret = COPT_GetQConstr(model.prob, row, quadrow, quadcol, quadval, num_qelem, C_NULL, linind, linval, C_NULL, C_NULL, num_elem, C_NULL)
     _check_ret(model, ret)
     return linind, linval, quadrow, quadcol, quadval
 end
@@ -2337,7 +2089,7 @@ function MOI.get(
     ::MOI.ConstraintFunction,
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
-    a, b, I, J, V = _CPXgetqconstr(model, c)
+    a, b, I, J, V = _copt_getqconstr(model, c)
     affine_terms = MOI.ScalarAffineTerm{Float64}[]
     for (col, coef) in zip(a, b)
         push!(
@@ -2399,8 +2151,8 @@ function _info(
     return throw(MOI.InvalidIndex(key))
 end
 
-_sos_type(::MOI.SOS1) = CPX_TYPE_SOS1
-_sos_type(::MOI.SOS2) = CPX_TYPE_SOS2
+_sos_type(::MOI.SOS1) = COPT_SOS_TYPE1
+_sos_type(::MOI.SOS2) = COPT_SOS_TYPE2
 
 function MOI.is_valid(
     model::Optimizer,
@@ -2416,17 +2168,7 @@ end
 
 function MOI.add_constraint(model::Optimizer, f::MOI.VectorOfVariables, s::_SOS)
     columns = Cint[column(model, v) - 1 for v in f.variables]
-    ret = CPXaddsos(
-        model.env,
-        model.lp,
-        1,
-        length(columns),
-        Ref{Cchar}(_sos_type(s)),
-        Ref{Cint}(0),
-        columns,
-        s.weights,
-        C_NULL,
-    )
+    ret = COPT_AddSOSs(model.prob, 1, Cint[_sos_type(s)], Cint[0], Cint[length(columns)], columns, s.weights)
     _check_ret(model, ret)
     model.last_constraint_index += 1
     index = MOI.ConstraintIndex{MOI.VectorOfVariables,typeof(s)}(
@@ -2442,7 +2184,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.VectorOfVariables,<:_SOS},
 )
     row = Cint(_info(model, c).row - 1)
-    ret = CPXdelsos(model.env, model.lp, row, row)
+    ret = COPT_DelSOSs(model.prob, 1, [row])
     _check_ret(model, ret)
     for (key, info) in model.sos_constraint_info
         if info.row > row
@@ -2474,42 +2216,25 @@ function MOI.set(
     return
 end
 
+function _copt_getsos(model::Optimizer, copt_row::Cint)
+    p_reqsize = Ref{Cint}()
+    ret = COPT_GetSOSs(prob, 1, [row], C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
+    sosind = Vector{Cint}(undef, num_elem)
+    soswt = Vector{Cdouble}(undef, num_elem)
+    ret = COPT_GetSOSs(prob, 1, [row], C_NULL, C_NULL, C_NULL, sosind, soswt, num_elem, C_NULL)
+    _check_ret(model, ret)
+    return sosind, soswt
+end
+
 function MOI.get(
     model::Optimizer,
     ::MOI.ConstraintSet,
     c::MOI.ConstraintIndex{MOI.VectorOfVariables,S},
 ) where {S<:_SOS}
-    surplus_p = Ref{Cint}()
     row = Cint(_info(model, c).row - 1)
-    CPXgetsos(
-        model.env,
-        model.lp,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        surplus_p,
-        row,
-        row,
-    )
-    sosind = Vector{Cint}(undef, -surplus_p[])
-    soswt = Vector{Cdouble}(undef, -surplus_p[])
-    ret = CPXgetsos(
-        model.env,
-        model.lp,
-        Ref{Cint}(),
-        Ref{Cchar}(),
-        Ref{Cint}(),
-        sosind,
-        soswt,
-        -surplus_p[],
-        surplus_p,
-        row,
-        row,
-    )
-    _check_ret(model, ret)
+    sosind, soswt = _copt_getsos(model, row)
     return S(soswt)
 end
 
@@ -2518,37 +2243,8 @@ function MOI.get(
     ::MOI.ConstraintFunction,
     c::MOI.ConstraintIndex{MOI.VectorOfVariables,S},
 ) where {S<:_SOS}
-    surplus_p = Ref{Cint}()
     row = Cint(_info(model, c).row - 1)
-    CPXgetsos(
-        model.env,
-        model.lp,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        surplus_p,
-        row,
-        row,
-    )
-    sosind = Vector{Cint}(undef, -surplus_p[])
-    soswt = Vector{Cdouble}(undef, -surplus_p[])
-    ret = CPXgetsos(
-        model.env,
-        model.lp,
-        Ref{Cint}(),
-        Ref{Cchar}(),
-        Ref{Cint}(),
-        sosind,
-        soswt,
-        -surplus_p[],
-        surplus_p,
-        row,
-        row,
-    )
-    _check_ret(model, ret)
+    sosind, soswt = _copt_getsos(model, row)
     return MOI.VectorOfVariables([
         model.variable_info[CleverDicts.LinearIndex(i + 1)].index for
         i in sosind
@@ -3230,40 +2926,22 @@ end
 
 function MOI.set(model::Optimizer, ::MOI.Silent, flag::Bool)
     model.silent = flag
-    MOI.set(model, MOI.RawOptimizerAttribute("CPX_PARAM_SCRIND"), flag ? 0 : 1)
+    MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), flag ? 0 : 1)
     return
 end
 
 function MOI.get(model::Optimizer, ::MOI.NumberOfThreads)
-    return Int(MOI.get(model, MOI.RawOptimizerAttribute("CPX_PARAM_THREADS")))
+    return Int(MOI.get(model, MOI.RawOptimizerAttribute("Threads")))
 end
 
 function MOI.set(model::Optimizer, ::MOI.NumberOfThreads, x::Int)
-    return MOI.set(model, MOI.RawOptimizerAttribute("CPX_PARAM_THREADS"), x)
+    return MOI.set(model, MOI.RawOptimizerAttribute("Threads"), x)
 end
 
-function MOI.get(model::Optimizer, ::MOI.Name)
-    surplus_p = Ref{Cint}()
-    CPXgetprobname(model.env, model.lp, C_NULL, 0, surplus_p)
-    buf_str = Vector{Cchar}(undef, -surplus_p[])
-    buf_str_p = pointer(buf_str)
-    GC.@preserve buf_str begin
-        ret = CPXgetprobname(
-            model.env,
-            model.lp,
-            buf_str_p,
-            -surplus_p[],
-            surplus_p,
-        )
-        _check_ret(model, ret)
-        return unsafe_string(buf_str_p)
-    end
-end
+MOI.get(model::Optimizer, ::MOI.Name) = model.name
 
 function MOI.set(model::Optimizer, ::MOI.Name, name::String)
-    ret = CPXchgprobname(model.env, model.lp, name)
-    _check_ret(model, ret)
-    return
+    model.name = name
 end
 
 MOI.get(model::Optimizer, ::MOI.NumberOfVariables) = length(model.variable_info)
@@ -3271,7 +2949,7 @@ function MOI.get(model::Optimizer, ::MOI.ListOfVariableIndices)
     return sort!(collect(keys(model.variable_info)), by = x -> x.value)
 end
 
-MOI.get(model::Optimizer, ::MOI.RawSolver) = model.lp
+MOI.get(model::Optimizer, ::MOI.RawSolver) = model.prob
 
 function MOI.set(
     model::Optimizer,
@@ -3313,8 +2991,8 @@ _bound_enums(::Type{<:MOI.Interval}) = (_INTERVAL,)
 _bound_enums(::Type{<:MOI.EqualTo}) = (_EQUAL_TO,)
 _bound_enums(::Any) = (nothing,)
 
-_type_enums(::Type{MOI.ZeroOne}) = (CPX_BINARY,)
-_type_enums(::Type{MOI.Integer}) = (CPX_INTEGER,)
+_type_enums(::Type{MOI.ZeroOne}) = (COPT_BINARY,)
+_type_enums(::Type{MOI.Integer}) = (COPT_INTEGER,)
 _type_enums(::Type{<:MOI.Semicontinuous}) = (CPX_SEMICONT,)
 _type_enums(::Type{<:MOI.Semiinteger}) = (CPX_SEMIINT,)
 _type_enums(::Any) = (nothing,)
@@ -3407,10 +3085,10 @@ function MOI.get(model::Optimizer, ::MOI.ListOfConstraintTypesPresent)
         elseif info.bound == _INTERVAL
             push!(constraints, (MOI.VariableIndex, MOI.Interval{Float64}))
         end
-        if info.type == CPX_CONTINUOUS
-        elseif info.type == CPX_BINARY
+        if info.type == COPT_CONTINUOUS
+        elseif info.type == COPT_BINARY
             push!(constraints, (MOI.VariableIndex, MOI.ZeroOne))
-        elseif info.type == CPX_INTEGER
+        elseif info.type == COPT_INTEGER
             push!(constraints, (MOI.VariableIndex, MOI.Integer))
         elseif info.type == CPX_SEMICONT
             push!(constraints, (MOI.VariableIndex, MOI.Semicontinuous{Float64}))
@@ -3456,13 +3134,9 @@ function MOI.modify(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},<:Any},
     chg::MOI.ScalarCoefficientChange{Float64},
 )
-    ret = CPXchgcoef(
-        model.env,
-        model.lp,
-        Cint(_info(model, c).row - 1),
-        Cint(column(model, chg.variable) - 1),
-        chg.new_coefficient,
-    )
+    col = Cint(column(model, chg.variable) - 1)
+    row = Cint(_info(model, c).row - 1)
+    ret = COPT_SetElem(model.prob, col, row, chg.new_coefficient)
     _check_ret(model, ret)
     return
 end
@@ -3473,7 +3147,7 @@ function MOI.modify(
     chg::MOI.ScalarCoefficientChange{Float64},
 )
     col = Cint(column(model, chg.variable) - 1)
-    ret = CPXchgobj(model.env, model.lp, 1, Ref(col), Ref(chg.new_coefficient))
+    ret = COPT_SetColObj(model.prob, 1, [col], [chg.new_coefficient])
     _check_ret(model, ret)
     if model.objective_type == _UNSET_OBJECTIVE ||
        model.objective_type == _SINGLE_VARIABLE
@@ -3506,13 +3180,7 @@ function _replace_with_matching_sparsity!(
 )
     for term in replacement.terms
         col = Cint(column(model, term.variable) - 1)
-        ret = CPXchgcoef(
-            model.env,
-            model.lp,
-            Cint(row - 1),
-            col,
-            MOI.coefficient(term),
-        )
+        ret = COPT_SetElem(model.prob, col, Cint(row - 1), MOI.coefficient(term))
         _check_ret(model, ret)
     end
     return
@@ -3545,20 +3213,14 @@ function _replace_with_different_sparsity!(
     # First, zero out the old constraint function terms.
     for term in previous.terms
         col = Cint(column(model, term.variable) - 1)
-        ret = CPXchgcoef(model.env, model.lp, Cint(row - 1), col, 0.0)
+        ret = COPT_SetElem(model.prob, col, Cint(row - 1), 0.0)
         _check_ret(model, ret)
     end
 
     # Next, set the new constraint function terms.
     for term in previous.terms
         col = Cint(column(model, term.variable) - 1)
-        ret = CPXchgcoef(
-            model.env,
-            model.lp,
-            Cint(row - 1),
-            col,
-            MOI.coefficient(term),
-        )
+        ret = COPT_SetElem(model.prob, col, Cint(row - 1), MOI.coefficient(term))
         _check_ret(model, ret)
     end
     return
@@ -3594,9 +3256,9 @@ end
 function MOI.set(
     model::Optimizer,
     ::MOI.ConstraintFunction,
-    c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},<:_SCALAR_SETS},
+    c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},S},
     f::MOI.ScalarAffineFunction{Float64},
-)
+) where {S<:_SCALAR_SETS}
     previous = MOI.get(model, MOI.ConstraintFunction(), c)
     MOI.Utilities.canonicalize!(previous)
     replacement = MOI.Utilities.canonical(f)
@@ -3611,12 +3273,19 @@ function MOI.set(
     else
         _replace_with_different_sparsity!(model, previous, replacement, row)
     end
-    rhs = Ref{Cdouble}()
-    ret = CPXgetrhs(model.env, model.lp, rhs, Cint(row - 1), Cint(row - 1))
-    _check_ret(model, ret)
-    rhs[] -= replacement.constant - previous.constant
-    ret = CPXchgrhs(model.env, model.lp, 1, Ref{Cint}(row - 1), rhs)
-    _check_ret(model, ret)
+    # Change right-hand side.
+    if S <: MOI.GreaterThan{Float64} || S <: MOI.EqualTo{Float64} || S <: MOI.Interval{Float64}
+        lower = _copt_get_row_lower(model, Cint(row - 1))
+        @assert isfinite(lower)
+        lower -= replacement.constant - previous.constant
+        _copt_set_row_lower(model, Cint(row - 1), lower)
+    end
+    if S <: MOI.LessThan{Float64} || S <: MOI.EqualTo{Float64} || S <: MOI.Interval{Float64}
+        upper = _copt_get_row_upper(model, Cint(row - 1))
+        @assert isfinite(upper)
+        upper -= replacement.constant - previous.constant
+        _copt_set_row_upper(model, Cint(row - 1), upper)
+    end
     return
 end
 
@@ -3691,14 +3360,7 @@ function MOI.add_constraint(
     lb = _get_variable_lower_bound(model, t_info)
     if isnan(t_info.lower_bound_if_soc) && lb < 0.0
         t_info.lower_bound_if_soc = lb
-        ret = CPXchgbds(
-            model.env,
-            model.lp,
-            1,
-            Ref{Cint}(t_info.column - 1),
-            Ref{Cchar}('L'),
-            Ref(0.0),
-        )
+        ret = COPT_SetColLower(model.prob, 1, Cint[t_info.column - 1], [0.0])
         _check_ret(model, ret)
     end
     t_info.num_soc_constraints += 1
@@ -3708,20 +3370,7 @@ function MOI.add_constraint(
     I = Cint[column(model, v) - 1 for v in f.variables]
     V = fill(-1.0, length(f.variables))
     V[1] = 1.0
-    ret = CPXaddqconstr(
-        model.env,
-        model.lp,
-        0,
-        length(V),
-        0.0,
-        Cchar('G'),
-        C_NULL,
-        C_NULL,
-        I,
-        I,
-        V,
-        C_NULL,
-    )
+    ret = COPT_AddQConstr(model.prob, 0, C_NULL, C_NULL, length(V), I, I, V, COPT_GREATER_EQUAL, 0.0, C_NULL)
     _check_ret(model, ret)
     model.last_constraint_index += 1
     model.quadratic_constraint_info[model.last_constraint_index] =
@@ -3745,12 +3394,7 @@ function MOI.delete(
 )
     f = MOI.get(model, MOI.ConstraintFunction(), c)
     info = _info(model, c)
-    ret = CPXdelqconstrs(
-        model.env,
-        model.lp,
-        Cint(info.row - 1),
-        Cint(info.row - 1),
-    )
+    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row - 1])
     _check_ret(model, ret)
     for (key, info_2) in model.quadratic_constraint_info
         if info_2.row > info.row
@@ -3791,7 +3435,7 @@ function MOI.get(
     ::MOI.ConstraintFunction,
     c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
 )
-    a, b, I, J, V = _CPXgetqconstr(model, c)
+    a, b, I, J, V = _copt_getqconstr(model, c)
     @assert length(a) == length(b) == 0  # Check for no linear terms.
     t = nothing
     x = MOI.VariableIndex[]
