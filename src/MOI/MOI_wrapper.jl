@@ -95,12 +95,12 @@ function _check_ret(env::Env, ret::Cint)
     return error(_get_error_string(env, ret))
 end
 
-# If you add a new error code that, when returned by CPLEX inside `optimize!`,
+# If you add a new error code that, when returned by COPT inside `optimize!`,
 # should be treated as a TerminationStatus by MOI, to the global `Dict`
 # below, then the rest of the code should pick up on this seamlessly.
-const _ERROR_TO_STATUS = Dict{Cint,MOI.TerminationStatusCode}([
-    # CPLEX Code => TerminationStatus
-    COPT_RETCODE_MEMORY => MOI.MEMORY_LIMIT,
+const _ERROR_TO_STATUS = Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
+    # COPT return code => TerminationStatus
+    COPT_RETCODE_MEMORY => (MOI.MEMORY_LIMIT, "Memory allocation failure."),
 ])
 
 # Same as _check_ret, but deals with the `model.ret_optimize` machinery.
@@ -214,6 +214,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     # Then, when/if the termination status is queried, we may override the
     # result taking into account the `ret_optimize` field.
     ret_optimize::Cint
+    solved_as_mip::Bool
 
     has_primal_certificate::Bool
     has_dual_certificate::Bool
@@ -297,6 +298,7 @@ function MOI.empty!(model::Optimizer)
     model.name_to_variable = nothing
     model.name_to_constraint_index = nothing
     model.ret_optimize = Cint(0)
+    model.solved_as_mip = false
     empty!(model.certificate)
     model.has_primal_certificate = false
     model.has_dual_certificate = false
@@ -316,6 +318,7 @@ function MOI.is_empty(model::Optimizer)
     model.name_to_variable !== nothing && return false
     model.name_to_constraint_index !== nothing && return false
     model.ret_optimize !== Cint(0) && return false
+    model.solved_as_mip && return false
     return true
 end
 
@@ -2083,43 +2086,24 @@ end
 ### Optimize methods.
 ###
 
-function _make_problem_type_continuous(model::Optimizer)
-    prob_type = CPXgetprobtype(model.env, model.lp)
-    # There are prob_types other than the ones listed here, but the
-    # CPLEX.Optimizer should never encounter them.
-    if prob_type == CPXPROB_MILP
-        ret = CPXchgprobtype(model.env, model.lp, CPXPROB_LP)
-        _check_ret(model, ret)
-    elseif prob_type == CPXPROB_MIQP
-        ret = CPXchgprobtype(model.env, model.lp, CPXPROB_QP)
-        _check_ret(model, ret)
-    elseif prob_type == CPXPROB_MIQCP
-        ret = CPXchgprobtype(model.env, model.lp, CPXPROB_QCP)
-        _check_ret(model, ret)
-    end
-    return
-end
-
 function _has_discrete_variables(model::Optimizer)
     if length(model.sos_constraint_info) > 0
         return true
     end
-    return any(v -> v.type != CPX_CONTINUOUS, values(model.variable_info))
+    return any(v -> v.type != COPT_CONTINUOUS, values(model.variable_info))
 end
 
 function _optimize!(model)
-    prob_type = CPXgetprobtype(model.env, model.lp)
-    # There are prob_types other than the ones listed here, but the
-    # CPLEX.Optimizer should never encounter them.
-    ret = if prob_type in (CPXPROB_MILP, CPXPROB_MIQP, CPXPROB_MIQCP)
-        CPXmipopt(model.env, model.lp)
-    elseif prob_type in (CPXPROB_QP, CPXPROB_QCP)
-        CPXqpopt(model.env, model.lp)
+    if _has_discrete_variables(model)
+        if model.objective_type == _SCALAR_QUADRATIC || !isempty(model.quadratic_constraint_info)
+            error("COPT cannot solve QP/QCP/SOCP models with discrete variables")
+        end
+        model.ret_optimize = COPT_Solve(model.prob)
+        model.solved_as_mip = true
     else
-        @assert prob_type == CPXPROB_LP
-        CPXlpopt(model.env, model.lp)
+        model.ret_optimize = COPT_SolveLp(model.prob)
+        model.solved_as_mip = false
     end
-    model.ret_optimize = ret
     _check_ret_optimize(model)
     return
 end
@@ -2135,26 +2119,9 @@ function MOI.optimize!(model::Optimizer)
             end
         end
         if length(varindices) > 0
-            ret = CPXaddmipstarts(
-                model.env,
-                model.lp,
-                1,
-                length(varindices),
-                Ref{Cint}(0),
-                varindices,
-                values,
-                Ref{Cint}(CPX_MIPSTART_AUTO),
-                C_NULL,
-            )
+            ret = COPT_AddMipStart(model.prob, length(varindices), varindices, values)
             _check_ret(model, ret)
         end
-    else
-        # CPLEX is annoying. If you add a discrete constraint, then delete it,
-        # CPLEX _DOES NOT_ change the prob type back to the continuous version.
-        # That means we dispatch to mipopt instead of lpopt/qpopt and we fail to
-        # compute the expected dual information. Force the change here if
-        # needed.
-        _make_problem_type_continuous(model)
     end
     start_time = time()
 
@@ -2170,19 +2137,9 @@ function MOI.optimize!(model::Optimizer)
     end
 
     model.solve_time = time() - start_time
+    # Infeasibility certificates are not supported by the COPT API yet.
     model.has_primal_certificate = false
     model.has_dual_certificate = false
-    if MOI.get(model, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
-        resize!(model.certificate, length(model.variable_info))
-        ret = CPXgetray(model.env, model.lp, model.certificate)
-        _check_ret(model, ret)
-        model.has_primal_certificate = true
-    elseif MOI.get(model, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
-        resize!(model.certificate, length(model.affine_constraint_info))
-        ret = CPXdualfarkas(model.env, model.lp, model.certificate, C_NULL)
-        _check_ret(model, ret)
-        model.has_dual_certificate = true
-    end
     model.variable_primal = nothing
     return
 end
@@ -2190,116 +2147,87 @@ end
 function _throw_if_optimize_in_progress(model, attr)
 end
 
-function MOI.get(model::Optimizer, attr::MOI.RawStatusString)
-    _throw_if_optimize_in_progress(model, attr)
-    if haskey(_ERROR_TO_STATUS, model.ret_optimize)
-        return _get_error_string(model.env, model.ret_optimize)
-    end
-    stat = CPXgetstat(model.env, model.lp)
-    buffer_str = Vector{Cchar}(undef, CPXMESSAGEBUFSIZE)
-    p = CPXgetstatstring(model.env, stat, buffer_str)
-    return unsafe_string(p)
-end
+# LP status codes. Descriptions taken from COPT user guide.
+const _RAW_LPSTATUS_STRINGS = Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
+    # Code => (TerminationStatus, RawStatusString)
+    COPT_LPSTATUS_UNSTARTED => (MOI.OPTIMIZE_NOT_CALLED, "The LP optimization is not started yet."),
+    COPT_LPSTATUS_OPTIMAL => (MOI.OPTIMAL, "The LP problem is solved to optimality."),
+    COPT_LPSTATUS_INFEASIBLE => (MOI.INFEASIBLE, "The LP problem is infeasible."),
+    COPT_LPSTATUS_UNBOUNDED => (MOI.DUAL_INFEASIBLE, "The LP problem is unbounded."),
+    COPT_LPSTATUS_NUMERICAL => (MOI.NUMERICAL_ERROR, "Numerical trouble encountered."),
+    COPT_LPSTATUS_TIMEOUT => (MOI.TIME_LIMIT, "The LP optimization is stopped because of time limit."),
+    COPT_LPSTATUS_UNFINISHED => (MOI.NUMERICAL_ERROR, "The LP optimization is stopped but the solver cannot provide a solution because of numerical difficulties."),
+    COPT_LPSTATUS_INTERRUPTED => (MOI.INTERRUPTED, "The LP optimization is stopped by user interrupt."),
+])
 
-# These status symbols are taken from libcpx_common at CPLEX 12.10.
-const _TERMINATION_STATUSES = Dict(
-    CPX_STAT_ABORT_DETTIME_LIM => MOI.TIME_LIMIT,
-    CPX_STAT_ABORT_DUAL_OBJ_LIM => MOI.OBJECTIVE_LIMIT,
-    CPX_STAT_ABORT_IT_LIM => MOI.ITERATION_LIMIT,
-    CPX_STAT_ABORT_OBJ_LIM => MOI.OBJECTIVE_LIMIT,
-    CPX_STAT_ABORT_PRIM_OBJ_LIM => MOI.OBJECTIVE_LIMIT,
-    CPX_STAT_ABORT_TIME_LIM => MOI.TIME_LIMIT,
-    CPX_STAT_ABORT_USER => MOI.INTERRUPTED,
-    CPX_STAT_BENDERS_NUM_BEST => MOI.NUMERICAL_ERROR,
-    CPX_STAT_CONFLICT_ABORT_CONTRADICTION => MOI.LOCALLY_INFEASIBLE,
-    CPX_STAT_CONFLICT_ABORT_DETTIME_LIM => MOI.TIME_LIMIT,
-    CPX_STAT_CONFLICT_ABORT_IT_LIM => MOI.ITERATION_LIMIT,
-    CPX_STAT_CONFLICT_ABORT_MEM_LIM => MOI.MEMORY_LIMIT,
-    CPX_STAT_CONFLICT_ABORT_NODE_LIM => MOI.NODE_LIMIT,
-    CPX_STAT_CONFLICT_ABORT_OBJ_LIM => MOI.OBJECTIVE_LIMIT,
-    CPX_STAT_CONFLICT_ABORT_TIME_LIM => MOI.TIME_LIMIT,
-    CPX_STAT_CONFLICT_ABORT_USER => MOI.INTERRUPTED,
-    CPX_STAT_CONFLICT_FEASIBLE => MOI.LOCALLY_SOLVED,
-    CPX_STAT_CONFLICT_MINIMAL => MOI.INFEASIBLE,
-    CPX_STAT_FEASIBLE => MOI.LOCALLY_SOLVED,
-    CPX_STAT_FEASIBLE_RELAXED_INF => MOI.LOCALLY_SOLVED,
-    CPX_STAT_FEASIBLE_RELAXED_QUAD => MOI.LOCALLY_SOLVED,
-    CPX_STAT_FEASIBLE_RELAXED_SUM => MOI.LOCALLY_SOLVED,
-    CPX_STAT_FIRSTORDER => MOI.LOCALLY_SOLVED,
-    CPX_STAT_INFEASIBLE => MOI.INFEASIBLE,
-    CPX_STAT_INForUNBD => MOI.INFEASIBLE_OR_UNBOUNDED,
-    CPX_STAT_MULTIOBJ_INFEASIBLE => MOI.INFEASIBLE,
-    CPX_STAT_MULTIOBJ_INForUNBD => MOI.INFEASIBLE_OR_UNBOUNDED,
-    CPX_STAT_MULTIOBJ_NON_OPTIMAL => MOI.LOCALLY_SOLVED,
-    CPX_STAT_MULTIOBJ_OPTIMAL => MOI.OPTIMAL,
-    CPX_STAT_MULTIOBJ_STOPPED => MOI.INTERRUPTED,
-    CPX_STAT_MULTIOBJ_UNBOUNDED => MOI.DUAL_INFEASIBLE,
-    CPX_STAT_NUM_BEST => MOI.NUMERICAL_ERROR,
-    CPX_STAT_OPTIMAL => MOI.OPTIMAL,
-    CPX_STAT_OPTIMAL_FACE_UNBOUNDED => MOI.DUAL_INFEASIBLE,
-    CPX_STAT_OPTIMAL_INFEAS => MOI.ALMOST_INFEASIBLE,
-    CPX_STAT_OPTIMAL_RELAXED_INF => MOI.LOCALLY_SOLVED,
-    CPX_STAT_OPTIMAL_RELAXED_QUAD => MOI.LOCALLY_SOLVED,
-    CPX_STAT_OPTIMAL_RELAXED_SUM => MOI.LOCALLY_SOLVED,
-    CPX_STAT_UNBOUNDED => MOI.DUAL_INFEASIBLE,
-    CPXMIP_ABORT_FEAS => MOI.INTERRUPTED,
-    CPXMIP_ABORT_INFEAS => MOI.INTERRUPTED,
-    CPXMIP_ABORT_RELAXATION_UNBOUNDED => MOI.INFEASIBLE_OR_UNBOUNDED,
-    CPXMIP_ABORT_RELAXED => MOI.LOCALLY_SOLVED,
-    CPXMIP_DETTIME_LIM_FEAS => MOI.TIME_LIMIT,
-    CPXMIP_DETTIME_LIM_INFEAS => MOI.TIME_LIMIT,
-    CPXMIP_FAIL_FEAS => MOI.LOCALLY_SOLVED,
-    CPXMIP_FAIL_FEAS_NO_TREE => MOI.LOCALLY_SOLVED,
-    CPXMIP_FAIL_INFEAS => MOI.OTHER_ERROR,
-    CPXMIP_FAIL_INFEAS_NO_TREE => MOI.MEMORY_LIMIT,
-    CPXMIP_FEASIBLE => MOI.LOCALLY_SOLVED,
-    CPXMIP_FEASIBLE_RELAXED_INF => MOI.LOCALLY_SOLVED,
-    CPXMIP_FEASIBLE_RELAXED_QUAD => MOI.LOCALLY_SOLVED,
-    CPXMIP_FEASIBLE_RELAXED_SUM => MOI.LOCALLY_SOLVED,
-    CPXMIP_INFEASIBLE => MOI.INFEASIBLE,
-    CPXMIP_INForUNBD => MOI.INFEASIBLE_OR_UNBOUNDED,
-    CPXMIP_MEM_LIM_FEAS => MOI.MEMORY_LIMIT,
-    CPXMIP_MEM_LIM_INFEAS => MOI.MEMORY_LIMIT,
-    CPXMIP_NODE_LIM_FEAS => MOI.NODE_LIMIT,
-    CPXMIP_NODE_LIM_INFEAS => MOI.NODE_LIMIT,
-    CPXMIP_OPTIMAL => MOI.OPTIMAL,
-    CPXMIP_OPTIMAL_INFEAS => MOI.INFEASIBLE,
-    CPXMIP_OPTIMAL_POPULATED => MOI.OPTIMAL,
-    CPXMIP_OPTIMAL_POPULATED_TOL => MOI.OPTIMAL,
-    CPXMIP_OPTIMAL_RELAXED_INF => MOI.LOCALLY_SOLVED,
-    CPXMIP_OPTIMAL_RELAXED_QUAD => MOI.LOCALLY_SOLVED,
-    CPXMIP_OPTIMAL_RELAXED_SUM => MOI.LOCALLY_SOLVED,
-    CPXMIP_OPTIMAL_TOL => MOI.OPTIMAL,
-    CPXMIP_POPULATESOL_LIM => MOI.SOLUTION_LIMIT,
-    CPXMIP_SOL_LIM => MOI.SOLUTION_LIMIT,
-    CPXMIP_TIME_LIM_FEAS => MOI.TIME_LIMIT,
-    CPXMIP_TIME_LIM_INFEAS => MOI.TIME_LIMIT,
-    CPXMIP_UNBOUNDED => MOI.DUAL_INFEASIBLE,
-)
+# MIP status codes. Descriptions taken from COPT user guide.
+const _RAW_MIPSTATUS_STRINGS = Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
+    # Code => (TerminationStatus, RawStatusString)
+    COPT_MIPSTATUS_UNSTARTED => (MOI.OPTIMIZE_NOT_CALLED, "The MIP optimization is not started yet."),
+    COPT_MIPSTATUS_OPTIMAL => (MOI.OPTIMAL, "The MIP problem is solved to optimality."),
+    COPT_MIPSTATUS_INFEASIBLE => (MOI.INFEASIBLE, "The MIP problem is infeasible."),
+    COPT_MIPSTATUS_UNBOUNDED => (MOI.DUAL_INFEASIBLE, "The MIP problem is unbounded."),
+    COPT_MIPSTATUS_INF_OR_UNB => (MOI.INFEASIBLE_OR_UNBOUNDED, "The MIP problem is infeasible or unbounded."),
+    COPT_MIPSTATUS_NODELIMIT => (MOI.NODE_LIMIT, "The MIP optimization is stopped because of node limit."),
+    COPT_MIPSTATUS_TIMEOUT => (MOI.TIME_LIMIT, "The MIP optimization is stopped because of time limit."),
+    COPT_MIPSTATUS_UNFINISHED => (MOI.NUMERICAL_ERROR, "The MIP optimization is stopped but the solver cannot provide a solution because of numerical difficulties."),
+    COPT_MIPSTATUS_INTERRUPTED => (MOI.INTERRUPTED, "The MIP optimization is stopped by user interrupt."),
+])
 
-function MOI.get(model::Optimizer, attr::MOI.TerminationStatus)
-    _throw_if_optimize_in_progress(model, attr)
+function _raw_lpstatus(model::Optimizer)
     if haskey(_ERROR_TO_STATUS, model.ret_optimize)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
-    stat = CPXgetstat(model.env, model.lp)
-    if stat == 0
-        return MOI.OPTIMIZE_NOT_CALLED
+    p_status = Ref{Cint}()
+    ret = COPT_GetIntAttr(prob, "LpStatus", p_status)
+    _check_ret(model, ret)
+    status = p_status[]
+    if haskey(_RAW_LPSTATUS_STRINGS, status)
+        return _RAW_LPSTATUS_STRINGS[status]
     end
-    term_stat = get(_TERMINATION_STATUSES, stat, nothing)
-    if term_stat === nothing
-        @warn("""
-        Termination status $(stat) is not wrapped by CPLEX.jl. CPLEX explains
-        this status as follows:
+    error("""
+LP termination status $(status) is not wrapped by COPT.jl.
 
-        $(MOI.get(model, MOI.RawStatusString()))
+Please open an issue at https://github.com/COPT-Public/COPT.jl/issues and
+provide the complete text of this error message.
+    """)
+end
 
-        Please open an issue at https://github.com/jump-dev/CPLEX.jl/issues and
-        provide the complete text of this error message.
-        """)
-        return MOI.OTHER_ERROR
+function _raw_mipstatus(model::Optimizer)
+    if haskey(_ERROR_TO_STATUS, model.ret_optimize)
+        return _ERROR_TO_STATUS[model.ret_optimize]
     end
-    return term_stat
+    p_status = Ref{Cint}()
+    ret = COPT_GetIntAttr(prob, "MipStatus", p_status)
+    _check_ret(model, ret)
+    status = p_status[]
+    if haskey(_RAW_MIPSTATUS_STRINGS, status)
+        return _RAW_MIPSTATUS_STRINGS[status]
+    end
+    error("""
+MIP termination status $(status) is not wrapped by COPT.jl.
+
+Please open an issue at https://github.com/COPT-Public/COPT.jl/issues and
+provide the complete text of this error message.
+    """)
+end
+
+function MOI.get(model::Optimizer, attr::MOI.RawStatusString)
+    _throw_if_optimize_in_progress(model, attr)
+    if model.solved_as_mip
+        return _raw_mipstatus(model)[2]
+    else
+        return _raw_lpstatus(model)[2]
+    end
+end
+
+function MOI.get(model::Optimizer, attr::MOI.TerminationStatus)
+    _throw_if_optimize_in_progress(model, attr)
+    if model.solved_as_mip
+        return _raw_mipstatus(model)[1]
+    else
+        return _raw_lpstatus(model)[1]
+    end
 end
 
 function MOI.get(model::Optimizer, attr::MOI.PrimalStatus)
@@ -2307,14 +2235,11 @@ function MOI.get(model::Optimizer, attr::MOI.PrimalStatus)
     if attr.result_index != 1
         return MOI.NO_SOLUTION
     end
-    solnmethod_p, solntype_p, pfeas_p = Ref{Cint}(), Ref{Cint}(), Ref{Cint}()
-    ret = CPXsolninfo(model.env, model.lp, C_NULL, solntype_p, pfeas_p, C_NULL)
+    attr_name = model.solved_as_mip ? "HasMipSol" : "HasLpSol"
+    p_value = Ref{Cint}()
+    ret = COPT_GetIntAttr(model.prob, attr_name, p_value)
     _check_ret(model, ret)
-    stat = CPXgetstat(model.env, model.lp)
-    if stat == CPX_STAT_UNBOUNDED
-        return MOI.INFEASIBILITY_CERTIFICATE
-    end
-    if pfeas_p[] > 0 && solntype_p[] != CPX_NO_SOLN
+    if p_value[] != 0
         return MOI.FEASIBLE_POINT
     end
     return MOI.NO_SOLUTION
@@ -2325,29 +2250,16 @@ function MOI.get(model::Optimizer, attr::MOI.DualStatus)
     if attr.result_index != 1
         return MOI.NO_SOLUTION
     end
-    solnmethod_p, solntype_p, dfeas_p = Ref{Cint}(), Ref{Cint}(), Ref{Cint}()
-    ret = CPXsolninfo(
-        model.env,
-        model.lp,
-        solnmethod_p,
-        solntype_p,
-        C_NULL,
-        dfeas_p,
-    )
-    _check_ret(model, ret)
-    stat = CPXgetstat(model.env, model.lp)
-    if stat == CPX_STAT_INFEASIBLE && solnmethod_p[] == CPX_ALG_DUAL
-        # Dual farkas only available when model is infeasible and CPXdualopt
-        # used as the solution method.
-        return MOI.INFEASIBILITY_CERTIFICATE
+    # Dual solution only available for non-MIP solve.
+    if !model.solved_as_mip
+        p_value = Ref{Cint}()
+        ret = COPT_GetIntAttr(model.prob, "HasLpSol", p_value)
+        _check_ret(model, ret)
+        if p_value[] != 0
+            return MOI.FEASIBLE_POINT
+        end
     end
-    if dfeas_p[] == 0
-        return MOI.NO_SOLUTION
-    elseif solntype_p[] == CPX_PRIMAL_SOLN || solntype_p[] == CPX_NO_SOLN
-        return MOI.NO_SOLUTION
-    else
-        return MOI.FEASIBLE_POINT
-    end
+    return MOI.NO_SOLUTION
 end
 
 _update_cache(::Optimizer, data::Vector{Float64}) = data
@@ -2355,7 +2267,7 @@ _update_cache(::Optimizer, data::Vector{Float64}) = data
 function _update_cache(model::Optimizer, ::Nothing)
     n = length(model.variable_info)
     x = zeros(n)
-    ret = CPXgetx(model.env, model.lp, x, 0, n - 1)
+    ret = COPT_GetSolution(model.prob, x)
     _check_ret(model, ret)
     return x
 end
@@ -2393,7 +2305,7 @@ function MOI.get(
     MOI.check_result_index_bounds(model, attr)
     row = Cint(_info(model, c).row - 1)
     ax = Ref{Cdouble}()
-    ret = CPXgetax(model.env, model.lp, ax, row, row)
+    ret = COPT_GetRowInfo(model.prob, "Slack", 1, [row], ax)
     _check_ret(model, ret)
     return ax[]
 end
@@ -2407,7 +2319,7 @@ function MOI.get(
     MOI.check_result_index_bounds(model, attr)
     row = Cint(_info(model, c).row - 1)
     xqxax = Ref{Cdouble}()
-    ret = CPXgetxqxax(model.env, model.lp, xqxax, row, row)
+    ret = COPT_GetQConstrInfo(model.prob, "Slack", 1, [row], xqxax)
     _check_ret(model, ret)
     return xqxax[]
 end
@@ -2429,34 +2341,14 @@ The Farkas dual of the variable is ā, and it applies to the upper bound if ā
 and it applies to the lower bound if ā > 0.
 """
 function _farkas_variable_dual(model::Optimizer, col::Cint)
-    nzcnt_p, surplus_p = Ref{Cint}(), Ref{Cint}()
+    p_reqsize = Ref{Cint}()
+    ret = COPT_GetCols(model.prob, 1, [col], C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
     cmatbeg = Vector{Cint}(undef, 2)
-    ret = CPXgetcols(
-        model.env,
-        model.lp,
-        nzcnt_p,
-        cmatbeg,
-        C_NULL,
-        C_NULL,
-        Cint(0),
-        surplus_p,
-        col,
-        col,
-    )
-    cmatind = Vector{Cint}(undef, -surplus_p[])
-    cmatval = Vector{Cdouble}(undef, -surplus_p[])
-    ret = CPXgetcols(
-        model.env,
-        model.lp,
-        nzcnt_p,
-        cmatbeg,
-        cmatind,
-        cmatval,
-        -surplus_p[],
-        surplus_p,
-        col,
-        col,
-    )
+    cmatind = Vector{Cint}(undef, num_elem)
+    cmatval = Vector{Cdouble}(undef, num_elem)
+    ret = COPT_GetCols(model.prob, 1, [col], cmatbeg, C_NULL, cmatind, cmatval, num_elem, C_NULL)
     _check_ret(model, ret)
     return sum(v * model.certificate[i+1] for (i, v) in zip(cmatind, cmatval))
 end
@@ -2474,7 +2366,7 @@ function MOI.get(
         return min(0.0, dual)
     end
     p = Ref{Cdouble}()
-    ret = CPXgetdj(model.env, model.lp, p, col, col)
+    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p)
     _check_ret(model, ret)
     sense = MOI.get(model, MOI.ObjectiveSense())
     # The following is a heuristic for determining whether the reduced cost
@@ -2508,7 +2400,7 @@ function MOI.get(
         return max(0.0, dual)
     end
     p = Ref{Cdouble}()
-    ret = CPXgetdj(model.env, model.lp, p, col, col)
+    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p)
     _check_ret(model, ret)
     sense = MOI.get(model, MOI.ObjectiveSense())
     # The following is a heuristic for determining whether the reduced cost
@@ -2544,7 +2436,7 @@ function MOI.get(
         return -_farkas_variable_dual(model, col)
     end
     p = Ref{Cdouble}()
-    ret = CPXgetdj(model.env, model.lp, p, col, col)
+    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p)
     _check_ret(model, ret)
     return _dual_multiplier(model) * p[]
 end
@@ -2561,7 +2453,7 @@ function MOI.get(
         return model.certificate[row+1]
     end
     p = Ref{Cdouble}()
-    ret = CPXgetpi(model.env, model.lp, p, row, row)
+    ret = COPT_GetRowInfo(model.prob, "Dual", 1, [row], p)
     _check_ret(model, ret)
     return _dual_multiplier(model) * p[]
 end
@@ -2584,10 +2476,10 @@ function MOI.get(
     # checked to numeric tolerances. We use `cone_top_tol`.
     cone_top, cone_top_tol = true, 1e-6
     x = zeros(length(model.variable_info))
-    ret = CPXgetx(model.env, model.lp, x, 0, length(x) - 1)
+    ret = COPT_GetSolution(model.prob, x)
     _check_ret(model, ret)
     ∇f = zeros(length(x))
-    a_i, a_v, qrow, qcol, qval = _CPXgetqconstr(model, c)
+    a_i, a_v, qrow, qcol, qval = _copt_getqconstr(model, c)
     for (i, j, v) in zip(qrow, qcol, qval)
         ∇f[i+1] += v * x[j+1]
         ∇f[j+1] += v * x[i+1]
@@ -2606,30 +2498,32 @@ function MOI.get(
         return NaN
     end
     qind = Cint(_info(model, c).row - 1)
-    nz_p, surplus_p = Ref{Cint}(), Ref{Cint}()
-    CPXgetqconstrdslack(
-        model.env,
-        model.lp,
-        qind,
-        nz_p,
-        C_NULL,
-        C_NULL,
-        0,
-        surplus_p,
-    )
-    ind = Vector{Cint}(undef, -surplus_p[])
-    val = Vector{Cdouble}(undef, -surplus_p[])
-    ret = CPXgetqconstrdslack(
-        model.env,
-        model.lp,
-        qind,
-        nz_p,
-        ind,
-        val,
-        -surplus_p[],
-        surplus_p,
-    )
-    _check_ret(model, ret)
+    # From CPLEX.jl:
+    # nz_p, surplus_p = Ref{Cint}(), Ref{Cint}()
+    # CPXgetqconstrdslack(
+    #     model.env,
+    #     model.lp,
+    #     qind,
+    #     nz_p,
+    #     C_NULL,
+    #     C_NULL,
+    #     0,
+    #     surplus_p,
+    # )
+    # ind = Vector{Cint}(undef, -surplus_p[])
+    # val = Vector{Cdouble}(undef, -surplus_p[])
+    # ret = CPXgetqconstrdslack(
+    #     model.env,
+    #     model.lp,
+    #     qind,
+    #     nz_p,
+    #     ind,
+    #     val,
+    #     -surplus_p[],
+    #     surplus_p,
+    # )
+    # _check_ret(model, ret)
+    error("COPT does not provide a dual solution for quadratic constraints.")
     ∇f_max, ∇f_i = findmax(abs.(∇f))
     if ∇f_max > cone_top_tol
         for (i, v) in zip(ind, val)
@@ -2641,24 +2535,29 @@ function MOI.get(
     return 0.0
 end
 
-function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
-    _throw_if_optimize_in_progress(model, attr)
-    MOI.check_result_index_bounds(model, attr)
-    p = Ref{Cdouble}()
-    ret = CPXgetobjval(model.env, model.lp, p)
+function _copt_get_int_attr(model::Optimizer, name::String)
+    p = Ref{Cint}()
+    ret = COPT_GetIntAttr(model.prob, name, p)
     _check_ret(model, ret)
     return p[]
 end
 
-function MOI.get(model::Optimizer, attr::MOI.ObjectiveBound)
-    _throw_if_optimize_in_progress(model, attr)
+function _copt_get_dbl_attr(model::Optimizer, name::String)
     p = Ref{Cdouble}()
-    ret = CPXgetbestobjval(model.env, model.lp, p)
-    if ret == CPXERR_NOT_MIP
-        ret = CPXgetobjval(model.env, model.lp, p)
-    end
+    ret = COPT_GetDblAttr(model.prob, name, p)
     _check_ret(model, ret)
     return p[]
+end
+
+function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
+    _throw_if_optimize_in_progress(model, attr)
+    MOI.check_result_index_bounds(model, attr)
+    return _copt_get_dbl_attr(model, model.solved_as_mip ? "BestObj" : "LpObjval")
+end
+
+function MOI.get(model::Optimizer, attr::MOI.ObjectiveBound)
+    _throw_if_optimize_in_progress(model, attr)
+    return _copt_get_dbl_attr(model, model.solved_as_mip ? "BestBnd" : "LpObjval")
 end
 
 function MOI.get(model::Optimizer, attr::MOI.SolveTimeSec)
@@ -2668,37 +2567,28 @@ end
 
 function MOI.get(model::Optimizer, attr::MOI.SimplexIterations)
     _throw_if_optimize_in_progress(model, attr)
-    return convert(Int64, CPXgetitcnt(model.env, model.lp))
+    return convert(Int64, _copt_get_int_attr(model, "SimplexIter"))
 end
 
 function MOI.get(model::Optimizer, attr::MOI.BarrierIterations)
     _throw_if_optimize_in_progress(model, attr)
-    return convert(Int64, CPXgetbaritcnt(model.env, model.lp))
+    return convert(Int64, _copt_get_int_attr(model, "BarrierIter"))
 end
 
 function MOI.get(model::Optimizer, attr::MOI.NodeCount)
     _throw_if_optimize_in_progress(model, attr)
-    return convert(Int64, CPXgetnodecnt(model.env, model.lp))
+    return convert(Int64, _copt_get_int_attr(model, "NodeCnt"))
 end
 
 function MOI.get(model::Optimizer, attr::MOI.RelativeGap)
     _throw_if_optimize_in_progress(model, attr)
-    p = Ref{Cdouble}()
-    ret = CPXgetmiprelgap(model.env, model.lp, p)
-    _check_ret(model, ret)
-    return p[]
+    return _copt_get_dbl_attr(model, "BestGap")
 end
 
 function MOI.get(model::Optimizer, attr::MOI.DualObjectiveValue)
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
-    p = Ref{Cdouble}()
-    ret = CPXgetbestobjval(model.env, model.lp, p)
-    if ret == CPXERR_NOT_MIP
-        ret = CPXgetobjval(model.env, model.lp, p)
-    end
-    _check_ret(model, ret)
-    return p[]
+    return _copt_get_dbl_attr(model, model.solved_as_mip ? "BestBnd" : "LpObjval")
 end
 
 function MOI.get(model::Optimizer, attr::MOI.ResultCount)
@@ -2707,12 +2597,10 @@ function MOI.get(model::Optimizer, attr::MOI.ResultCount)
         return 1
     elseif model.has_primal_certificate
         return 1
+    elseif model.solved_as_mip
+        return _copt_get_int_attr(model, "HasMipSol") == 0 ? 0 : 1
     else
-        pfeasind_p = Ref{Cint}()
-        ret =
-            CPXsolninfo(model.env, model.lp, C_NULL, C_NULL, pfeasind_p, C_NULL)
-        _check_ret(model, ret)
-        return pfeasind_p[] == 1 ? 1 : 0
+        return _copt_get_int_attr(model, "HasLpSol") == 0 ? 0 : 1
     end
 end
 
@@ -3085,14 +2973,12 @@ function MOI.get(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},S},
 ) where {S<:_SCALAR_SETS}
     rstat = Vector{Cint}(undef, length(model.affine_constraint_info))
-    ret = CPXgetbase(model.env, model.lp, C_NULL, rstat)
+    ret = COPT_GetBasis(model.prob, C_NULL, rowBasis)
     _check_ret(model, ret)
     cbasis = rstat[_info(model, c).row]
-    if cbasis == CPX_BASIC
+    if cbasis == COPT_BASIS_BASIC
         return MOI.BASIC
     else
-        # CPLEX uses CPX_AT_LOWER regardless of whether it is <= or >=.
-        @assert cbasis == CPX_AT_LOWER
         return MOI.NONBASIC
     end
 end
@@ -3103,18 +2989,20 @@ function MOI.get(
     x::MOI.VariableIndex,
 )
     cstat = Vector{Cint}(undef, length(model.variable_info))
-    ret = CPXgetbase(model.env, model.lp, cstat, C_NULL)
+    ret = COPT_GetBasis(model.prob, colBasis, C_NULL)
     _check_ret(model, ret)
     vbasis = cstat[_info(model, x).column]
-    if vbasis == CPX_BASIC
+    if vbasis == COPT_BASIS_BASIC
         return MOI.BASIC
-    elseif vbasis == CPX_FREE_SUPER
+    elseif vbasis == COPT_BASIS_SUPERBASIC
         return MOI.SUPER_BASIC
-    elseif vbasis == CPX_AT_LOWER
+    elseif vbasis == COPT_BASIS_LOWER
         return MOI.NONBASIC_AT_LOWER
-    else
-        @assert vbasis == CPX_AT_UPPER
+    elseif vbasis == COPT_BASIS_UPPER
         return MOI.NONBASIC_AT_UPPER
+    else
+        @assert vbasis == COPT_BASIS_FIXED
+        return MOI.NONBASIC
     end
 end
 
@@ -3289,31 +3177,33 @@ function MOI.get(
     c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
 )
     f = MOI.get(model, MOI.ConstraintFunction(), c)
-    qind = Cint(_info(model, c).row - 1)
-    surplus_p = Ref{Cint}()
-    CPXgetqconstrdslack(
-        model.env,
-        model.lp,
-        qind,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        surplus_p,
-    )
-    ind = Vector{Cint}(undef, -surplus_p[])
-    val = Vector{Cdouble}(undef, -surplus_p[])
-    ret = CPXgetqconstrdslack(
-        model.env,
-        model.lp,
-        qind,
-        C_NULL,
-        ind,
-        val,
-        -surplus_p[],
-        surplus_p,
-    )
-    _check_ret(model, ret)
+    # From CPLEX.jl:
+    # qind = Cint(_info(model, c).row - 1)
+    # surplus_p = Ref{Cint}()
+    # CPXgetqconstrdslack(
+    #     model.env,
+    #     model.lp,
+    #     qind,
+    #     C_NULL,
+    #     C_NULL,
+    #     C_NULL,
+    #     0,
+    #     surplus_p,
+    # )
+    # ind = Vector{Cint}(undef, -surplus_p[])
+    # val = Vector{Cdouble}(undef, -surplus_p[])
+    # ret = CPXgetqconstrdslack(
+    #     model.env,
+    #     model.lp,
+    #     qind,
+    #     C_NULL,
+    #     ind,
+    #     val,
+    #     -surplus_p[],
+    #     surplus_p,
+    # )
+    # _check_ret(model, ret)
+    error("COPT does not provide a dual solution for quadratic constraints.")
     slack = zeros(length(model.variable_info))
     for (i, v) in zip(ind, val)
         slack[i+1] += v
