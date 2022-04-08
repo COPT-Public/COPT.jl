@@ -21,15 +21,6 @@ const CleverDicts = MOI.Utilities.CleverDicts
     _UNSET_OBJECTIVE,
 )
 
-@enum(
-    CallbackState,
-    _CB_NONE,
-    _CB_GENERIC,
-    _CB_LAZY,
-    _CB_USER_CUT,
-    _CB_HEURISTIC,
-)
-
 const _SCALAR_SETS = Union{
     MOI.GreaterThan{Float64},
     MOI.LessThan{Float64},
@@ -232,15 +223,6 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
     conflict::Any # ::Union{Nothing, ConflictRefinerData}
 
-    # Callback fields.
-    callback_variable_primal::Vector{Float64}
-    has_generic_callback::Bool
-    callback_state::CallbackState
-    lazy_callback::Union{Nothing,Function}
-    user_cut_callback::Union{Nothing,Function}
-    heuristic_callback::Union{Nothing,Function}
-    generic_callback::Any
-
     # For more information on why `pass_names` is necessary, read:
     # https://github.com/jump-dev/CPLEX.jl/issues/392
     # The underlying problem is that we observed that add_variable, then set
@@ -266,7 +248,6 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         model.sos_constraint_info = Dict{Int,_ConstraintInfo}()
         model.indicator_constraint_info =
             Dict{Int,Tuple{_ConstraintInfo,MOI.VectorAffineFunction{Float64}}}()
-        model.callback_variable_primal = Float64[]
         model.certificate = Float64[]
         model.pass_names = false
         MOI.empty!(model)
@@ -316,18 +297,11 @@ function MOI.empty!(model::Optimizer)
     model.name_to_variable = nothing
     model.name_to_constraint_index = nothing
     model.ret_optimize = Cint(0)
-    empty!(model.callback_variable_primal)
     empty!(model.certificate)
     model.has_primal_certificate = false
     model.has_dual_certificate = false
     model.solve_time = NaN
     model.conflict = nothing
-    model.callback_state = _CB_NONE
-    model.has_generic_callback = false
-    model.lazy_callback = nothing
-    model.user_cut_callback = nothing
-    model.heuristic_callback = nothing
-    model.generic_callback = nothing
     model.variable_primal = nothing
     return
 end
@@ -342,12 +316,6 @@ function MOI.is_empty(model::Optimizer)
     model.name_to_variable !== nothing && return false
     model.name_to_constraint_index !== nothing && return false
     model.ret_optimize !== Cint(0) && return false
-    length(model.callback_variable_primal) != 0 && return false
-    model.callback_state != _CB_NONE && return false
-    model.has_generic_callback && return false
-    model.lazy_callback !== nothing && return false
-    model.user_cut_callback !== nothing && return false
-    model.heuristic_callback !== nothing && return false
     return true
 end
 
@@ -2115,19 +2083,6 @@ end
 ### Optimize methods.
 ###
 
-function _check_moi_callback_validity(model::Optimizer)
-    has_moi_callback =
-        model.lazy_callback !== nothing ||
-        model.user_cut_callback !== nothing ||
-        model.heuristic_callback !== nothing
-    if has_moi_callback && model.has_generic_callback
-        error(
-            "Cannot use CPLEX.CallbackFunction as well as MOI.AbstractCallbackFunction",
-        )
-    end
-    return has_moi_callback
-end
-
 function _make_problem_type_continuous(model::Optimizer)
     prob_type = CPXgetprobtype(model.env, model.lp)
     # There are prob_types other than the ones listed here, but the
@@ -2170,22 +2125,6 @@ function _optimize!(model)
 end
 
 function MOI.optimize!(model::Optimizer)
-    if _check_moi_callback_validity(model)
-        context_mask = UInt16(0)
-        if model.lazy_callback !== nothing
-            context_mask |= CPX_CALLBACKCONTEXT_CANDIDATE
-        end
-        if model.user_cut_callback !== nothing ||
-           model.heuristic_callback !== nothing
-            context_mask |= CPX_CALLBACKCONTEXT_RELAXATION
-        end
-        MOI.set(
-            model,
-            CallbackFunction(context_mask),
-            _default_moi_callback(model),
-        )
-        model.has_generic_callback = false
-    end
     if _has_discrete_variables(model)
         varindices = Cint[]
         values = Float64[]
@@ -2249,9 +2188,6 @@ function MOI.optimize!(model::Optimizer)
 end
 
 function _throw_if_optimize_in_progress(model, attr)
-    if model.callback_state != _CB_NONE
-        throw(MOI.OptimizeInProgress(attr))
-    end
 end
 
 function MOI.get(model::Optimizer, attr::MOI.RawStatusString)
