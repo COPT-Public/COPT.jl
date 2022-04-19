@@ -1,4 +1,3 @@
-using CPLEX
 using Test
 
 @testset "MathOptInterface Tests" begin
