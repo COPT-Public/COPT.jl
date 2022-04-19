@@ -32,7 +32,7 @@ mutable struct _VariableInfo
     index::MOI.VariableIndex
     column::Int
     bound::_BoundType
-    type::Char
+    type::Cchar
     start::Union{Float64,Nothing}
     name::String
     # Storage for the lower bound if the variable is the `t` variable in a
@@ -1095,7 +1095,7 @@ _bounds(s::MOI.Interval{Float64}) = (s.lower, s.upper)
 
 function _throw_if_existing_lower(
     bound::_BoundType,
-    var_type::Char,
+    var_type::Cchar,
     new_set::Type{<:MOI.AbstractSet},
     variable::MOI.VariableIndex,
 )
@@ -1115,7 +1115,7 @@ end
 
 function _throw_if_existing_upper(
     bound::_BoundType,
-    var_type::Char,
+    var_type::Cchar,
     new_set::Type{<:MOI.AbstractSet},
     variable::MOI.VariableIndex,
 )
