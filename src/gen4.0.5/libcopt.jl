@@ -11,11 +11,11 @@ mutable struct copt_prob_s end
 const copt_prob = copt_prob_s
 
 function COPT_GetBanner(buff, buffSize)
-    ccall((:COPT_GetBanner, libcopt), Cint, (Cstring, Cint), buff, buffSize)
+    ccall((:COPT_GetBanner, libcopt), Cint, (Ptr{Cchar}, Cint), buff, buffSize)
 end
 
 function COPT_GetRetcodeMsg(code, buff, buffSize)
-    ccall((:COPT_GetRetcodeMsg, libcopt), Cint, (Cint, Cstring, Cint), code, buff, buffSize)
+    ccall((:COPT_GetRetcodeMsg, libcopt), Cint, (Cint, Ptr{Cchar}, Cint), code, buff, buffSize)
 end
 
 function COPT_CreateEnvConfig(p_config)
@@ -27,7 +27,7 @@ function COPT_DeleteEnvConfig(p_config)
 end
 
 function COPT_SetEnvConfig(config, name, value)
-    ccall((:COPT_SetEnvConfig, libcopt), Cint, (Ptr{copt_env_config}, Cstring, Cstring), config, name, value)
+    ccall((:COPT_SetEnvConfig, libcopt), Cint, (Ptr{copt_env_config}, Ptr{Cchar}, Ptr{Cchar}), config, name, value)
 end
 
 function COPT_CreateEnv(p_env)
@@ -35,7 +35,7 @@ function COPT_CreateEnv(p_env)
 end
 
 function COPT_CreateEnvWithPath(licDir, p_env)
-    ccall((:COPT_CreateEnvWithPath, libcopt), Cint, (Cstring, Ptr{Ptr{copt_env}}), licDir, p_env)
+    ccall((:COPT_CreateEnvWithPath, libcopt), Cint, (Ptr{Cchar}, Ptr{Ptr{copt_env}}), licDir, p_env)
 end
 
 function COPT_CreateEnvWithConfig(config, p_env)
@@ -51,7 +51,7 @@ function COPT_DeleteEnv(p_env)
 end
 
 function COPT_GetLicenseMsg(env, buff, buffSize)
-    ccall((:COPT_GetLicenseMsg, libcopt), Cint, (Ptr{copt_env}, Cstring, Cint), env, buff, buffSize)
+    ccall((:COPT_GetLicenseMsg, libcopt), Cint, (Ptr{copt_env}, Ptr{Cchar}, Cint), env, buff, buffSize)
 end
 
 function COPT_CreateProb(env, p_prob)
@@ -67,23 +67,23 @@ function COPT_DeleteProb(p_prob)
 end
 
 function COPT_LoadProb(prob, nCol, nRow, iObjSense, dObjConst, colObj, colMatBeg, colMatCnt, colMatIdx, colMatElem, colType, colLower, colUpper, rowSense, rowBound, rowUpper, colNames, rowNames)
-    ccall((:COPT_LoadProb, libcopt), Cint, (Ptr{copt_prob}, Cint, Cint, Cint, Cdouble, Ptr{Cdouble}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cstring, Ptr{Cdouble}, Ptr{Cdouble}, Cstring, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cstring}, Ptr{Cstring}), prob, nCol, nRow, iObjSense, dObjConst, colObj, colMatBeg, colMatCnt, colMatIdx, colMatElem, colType, colLower, colUpper, rowSense, rowBound, rowUpper, colNames, rowNames)
+    ccall((:COPT_LoadProb, libcopt), Cint, (Ptr{copt_prob}, Cint, Cint, Cint, Cdouble, Ptr{Cdouble}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cchar}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cchar}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Ptr{Cchar}}, Ptr{Ptr{Cchar}}), prob, nCol, nRow, iObjSense, dObjConst, colObj, colMatBeg, colMatCnt, colMatIdx, colMatElem, colType, colLower, colUpper, rowSense, rowBound, rowUpper, colNames, rowNames)
 end
 
 function COPT_AddCol(prob, dColObj, nColMatCnt, colMatIdx, colMatElem, cColType, dColLower, dColUpper, colName)
-    ccall((:COPT_AddCol, libcopt), Cint, (Ptr{copt_prob}, Cdouble, Cint, Ptr{Cint}, Ptr{Cdouble}, Cchar, Cdouble, Cdouble, Cstring), prob, dColObj, nColMatCnt, colMatIdx, colMatElem, cColType, dColLower, dColUpper, colName)
+    ccall((:COPT_AddCol, libcopt), Cint, (Ptr{copt_prob}, Cdouble, Cint, Ptr{Cint}, Ptr{Cdouble}, Cchar, Cdouble, Cdouble, Ptr{Cchar}), prob, dColObj, nColMatCnt, colMatIdx, colMatElem, cColType, dColLower, dColUpper, colName)
 end
 
 function COPT_AddRow(prob, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound, dRowUpper, rowName)
-    ccall((:COPT_AddRow, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cdouble}, Cchar, Cdouble, Cdouble, Cstring), prob, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound, dRowUpper, rowName)
+    ccall((:COPT_AddRow, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cdouble}, Cchar, Cdouble, Cdouble, Ptr{Cchar}), prob, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound, dRowUpper, rowName)
 end
 
 function COPT_AddCols(prob, nAddCol, colObj, colMatBeg, colMatCnt, colMatIdx, colMatElem, colType, colLower, colUpper, colNames)
-    ccall((:COPT_AddCols, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cdouble}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cstring, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cstring}), prob, nAddCol, colObj, colMatBeg, colMatCnt, colMatIdx, colMatElem, colType, colLower, colUpper, colNames)
+    ccall((:COPT_AddCols, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cdouble}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cchar}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Ptr{Cchar}}), prob, nAddCol, colObj, colMatBeg, colMatCnt, colMatIdx, colMatElem, colType, colLower, colUpper, colNames)
 end
 
 function COPT_AddRows(prob, nAddRow, rowMatBeg, rowMatCnt, rowMatIdx, rowMatElem, rowSense, rowBound, rowUpper, rowNames)
-    ccall((:COPT_AddRows, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cstring, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cstring}), prob, nAddRow, rowMatBeg, rowMatCnt, rowMatIdx, rowMatElem, rowSense, rowBound, rowUpper, rowNames)
+    ccall((:COPT_AddRows, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cchar}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Ptr{Cchar}}), prob, nAddRow, rowMatBeg, rowMatCnt, rowMatIdx, rowMatElem, rowSense, rowBound, rowUpper, rowNames)
 end
 
 function COPT_AddSOSs(prob, nAddSOS, sosType, sosMatBeg, sosMatCnt, sosMatIdx, sosMatWt)
@@ -95,7 +95,7 @@ function COPT_AddCones(prob, nAddCone, coneType, coneBeg, coneCnt, coneIdx)
 end
 
 function COPT_AddQConstr(prob, nRowMatCnt, rowMatIdx, rowMatElem, nQMatCnt, qMatRow, qMatCol, qMatElem, cRowsense, dRowBound, name)
-    ccall((:COPT_AddQConstr, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cdouble}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cchar, Cdouble, Cstring), prob, nRowMatCnt, rowMatIdx, rowMatElem, nQMatCnt, qMatRow, qMatCol, qMatElem, cRowsense, dRowBound, name)
+    ccall((:COPT_AddQConstr, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cdouble}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cchar, Cdouble, Ptr{Cchar}), prob, nRowMatCnt, rowMatIdx, rowMatElem, nQMatCnt, qMatRow, qMatCol, qMatElem, cRowsense, dRowBound, name)
 end
 
 function COPT_AddIndicator(prob, binColIdx, binColVal, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound)
@@ -119,11 +119,11 @@ function COPT_GetCones(prob, nCone, list, coneType, coneBeg, coneCnt, coneIdx, n
 end
 
 function COPT_GetQConstr(prob, qConstrIdx, qMatRow, qMatCol, qMatElem, nQElemSize, pQReqSize, rowMatIdx, rowMatElem, cRowSense, dRowBound, nElemSize, pReqSize)
-    ccall((:COPT_GetQConstr, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cstring, Ptr{Cdouble}, Cint, Ptr{Cint}), prob, qConstrIdx, qMatRow, qMatCol, qMatElem, nQElemSize, pQReqSize, rowMatIdx, rowMatElem, cRowSense, dRowBound, nElemSize, pReqSize)
+    ccall((:COPT_GetQConstr, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cchar}, Ptr{Cdouble}, Cint, Ptr{Cint}), prob, qConstrIdx, qMatRow, qMatCol, qMatElem, nQElemSize, pQReqSize, rowMatIdx, rowMatElem, cRowSense, dRowBound, nElemSize, pReqSize)
 end
 
 function COPT_GetIndicator(prob, rowIdx, binColIdx, binColVal, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound, nElemSize, pReqSize)
-    ccall((:COPT_GetIndicator, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Cstring, Ptr{Cdouble}, Cint, Ptr{Cint}), prob, rowIdx, binColIdx, binColVal, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound, nElemSize, pReqSize)
+    ccall((:COPT_GetIndicator, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cchar}, Ptr{Cdouble}, Cint, Ptr{Cint}), prob, rowIdx, binColIdx, binColVal, nRowMatCnt, rowMatIdx, rowMatElem, cRowSense, dRowBound, nElemSize, pReqSize)
 end
 
 function COPT_GetElem(prob, iCol, iRow, p_elem)
@@ -183,7 +183,7 @@ function COPT_SetColObj(prob, num, list, obj)
 end
 
 function COPT_SetColType(prob, num, list, type)
-    ccall((:COPT_SetColType, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Cstring), prob, num, list, type)
+    ccall((:COPT_SetColType, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cchar}), prob, num, list, type)
 end
 
 function COPT_SetColLower(prob, num, list, lower)
@@ -195,7 +195,7 @@ function COPT_SetColUpper(prob, num, list, upper)
 end
 
 function COPT_SetColNames(prob, num, list, names)
-    ccall((:COPT_SetColNames, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cstring}), prob, num, list, names)
+    ccall((:COPT_SetColNames, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Ptr{Cchar}}), prob, num, list, names)
 end
 
 function COPT_SetRowLower(prob, num, list, lower)
@@ -207,11 +207,11 @@ function COPT_SetRowUpper(prob, num, list, upper)
 end
 
 function COPT_SetRowNames(prob, num, list, names)
-    ccall((:COPT_SetRowNames, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cstring}), prob, num, list, names)
+    ccall((:COPT_SetRowNames, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Ptr{Cchar}}), prob, num, list, names)
 end
 
 function COPT_SetQConstrSense(prob, num, list, sense)
-    ccall((:COPT_SetQConstrSense, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Cstring), prob, num, list, sense)
+    ccall((:COPT_SetQConstrSense, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cchar}), prob, num, list, sense)
 end
 
 function COPT_SetQConstrRhs(prob, num, list, rhs)
@@ -219,7 +219,7 @@ function COPT_SetQConstrRhs(prob, num, list, rhs)
 end
 
 function COPT_SetQConstrNames(prob, num, list, names)
-    ccall((:COPT_SetQConstrNames, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cstring}), prob, num, list, names)
+    ccall((:COPT_SetQConstrNames, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Ptr{Cchar}}), prob, num, list, names)
 end
 
 function COPT_ReplaceColObj(prob, num, list, obj)
@@ -227,35 +227,35 @@ function COPT_ReplaceColObj(prob, num, list, obj)
 end
 
 function COPT_ReadMps(prob, mpsfilename)
-    ccall((:COPT_ReadMps, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, mpsfilename)
+    ccall((:COPT_ReadMps, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, mpsfilename)
 end
 
 function COPT_ReadLp(prob, lpfilename)
-    ccall((:COPT_ReadLp, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, lpfilename)
+    ccall((:COPT_ReadLp, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, lpfilename)
 end
 
 function COPT_ReadBin(prob, binfilename)
-    ccall((:COPT_ReadBin, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, binfilename)
+    ccall((:COPT_ReadBin, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, binfilename)
 end
 
 function COPT_ReadSol(prob, solfilename)
-    ccall((:COPT_ReadSol, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, solfilename)
+    ccall((:COPT_ReadSol, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, solfilename)
 end
 
 function COPT_ReadBasis(prob, basfilename)
-    ccall((:COPT_ReadBasis, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, basfilename)
+    ccall((:COPT_ReadBasis, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, basfilename)
 end
 
 function COPT_ReadMst(prob, mstfilename)
-    ccall((:COPT_ReadMst, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, mstfilename)
+    ccall((:COPT_ReadMst, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, mstfilename)
 end
 
 function COPT_ReadParam(prob, parfilename)
-    ccall((:COPT_ReadParam, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, parfilename)
+    ccall((:COPT_ReadParam, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, parfilename)
 end
 
 function COPT_ReadParamStr(prob, strParam)
-    ccall((:COPT_ReadParamStr, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, strParam)
+    ccall((:COPT_ReadParamStr, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, strParam)
 end
 
 function COPT_ReadBlob(prob, blob, len)
@@ -263,47 +263,47 @@ function COPT_ReadBlob(prob, blob, len)
 end
 
 function COPT_WriteMps(prob, mpsfilename)
-    ccall((:COPT_WriteMps, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, mpsfilename)
+    ccall((:COPT_WriteMps, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, mpsfilename)
 end
 
 function COPT_WriteLp(prob, lpfilename)
-    ccall((:COPT_WriteLp, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, lpfilename)
+    ccall((:COPT_WriteLp, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, lpfilename)
 end
 
 function COPT_WriteBin(prob, binfilename)
-    ccall((:COPT_WriteBin, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, binfilename)
+    ccall((:COPT_WriteBin, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, binfilename)
 end
 
 function COPT_WriteIIS(prob, iisfilename)
-    ccall((:COPT_WriteIIS, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, iisfilename)
+    ccall((:COPT_WriteIIS, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, iisfilename)
 end
 
 function COPT_WriteSol(prob, solfilename)
-    ccall((:COPT_WriteSol, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, solfilename)
+    ccall((:COPT_WriteSol, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, solfilename)
 end
 
 function COPT_WritePoolSol(prob, iSol, solfilename)
-    ccall((:COPT_WritePoolSol, libcopt), Cint, (Ptr{copt_prob}, Cint, Cstring), prob, iSol, solfilename)
+    ccall((:COPT_WritePoolSol, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cchar}), prob, iSol, solfilename)
 end
 
 function COPT_WriteBasis(prob, basfilename)
-    ccall((:COPT_WriteBasis, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, basfilename)
+    ccall((:COPT_WriteBasis, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, basfilename)
 end
 
 function COPT_WriteMst(prob, mstfilename)
-    ccall((:COPT_WriteMst, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, mstfilename)
+    ccall((:COPT_WriteMst, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, mstfilename)
 end
 
 function COPT_WriteParam(prob, parfilename)
-    ccall((:COPT_WriteParam, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, parfilename)
+    ccall((:COPT_WriteParam, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, parfilename)
 end
 
 function COPT_WriteMpsStr(prob, str, nStrSize, pReqSize)
-    ccall((:COPT_WriteMpsStr, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cint, Ptr{Cint}), prob, str, nStrSize, pReqSize)
+    ccall((:COPT_WriteMpsStr, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cint, Ptr{Cint}), prob, str, nStrSize, pReqSize)
 end
 
 function COPT_WriteParamStr(prob, str, nStrSize, pReqSize)
-    ccall((:COPT_WriteParamStr, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cint, Ptr{Cint}), prob, str, nStrSize, pReqSize)
+    ccall((:COPT_WriteParamStr, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cint, Ptr{Cint}), prob, str, nStrSize, pReqSize)
 end
 
 function COPT_WriteBlob(prob, tryCompress, p_blob, pLen)
@@ -359,43 +359,43 @@ function COPT_GetPoolSolution(prob, iSol, num, list, colVal)
 end
 
 function COPT_SetIntParam(prob, paramName, intParam)
-    ccall((:COPT_SetIntParam, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cint), prob, paramName, intParam)
+    ccall((:COPT_SetIntParam, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cint), prob, paramName, intParam)
 end
 
 function COPT_GetIntParam(prob, paramName, p_intParam)
-    ccall((:COPT_GetIntParam, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, paramName, p_intParam)
+    ccall((:COPT_GetIntParam, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, paramName, p_intParam)
 end
 
 function COPT_GetIntParamDef(prob, paramName, p_intParam)
-    ccall((:COPT_GetIntParamDef, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, paramName, p_intParam)
+    ccall((:COPT_GetIntParamDef, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, paramName, p_intParam)
 end
 
 function COPT_GetIntParamMin(prob, paramName, p_intParam)
-    ccall((:COPT_GetIntParamMin, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, paramName, p_intParam)
+    ccall((:COPT_GetIntParamMin, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, paramName, p_intParam)
 end
 
 function COPT_GetIntParamMax(prob, paramName, p_intParam)
-    ccall((:COPT_GetIntParamMax, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, paramName, p_intParam)
+    ccall((:COPT_GetIntParamMax, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, paramName, p_intParam)
 end
 
 function COPT_SetDblParam(prob, paramName, dblParam)
-    ccall((:COPT_SetDblParam, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cdouble), prob, paramName, dblParam)
+    ccall((:COPT_SetDblParam, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cdouble), prob, paramName, dblParam)
 end
 
 function COPT_GetDblParam(prob, paramName, p_dblParam)
-    ccall((:COPT_GetDblParam, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cdouble}), prob, paramName, p_dblParam)
+    ccall((:COPT_GetDblParam, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cdouble}), prob, paramName, p_dblParam)
 end
 
 function COPT_GetDblParamDef(prob, paramName, p_dblParam)
-    ccall((:COPT_GetDblParamDef, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cdouble}), prob, paramName, p_dblParam)
+    ccall((:COPT_GetDblParamDef, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cdouble}), prob, paramName, p_dblParam)
 end
 
 function COPT_GetDblParamMin(prob, paramName, p_dblParam)
-    ccall((:COPT_GetDblParamMin, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cdouble}), prob, paramName, p_dblParam)
+    ccall((:COPT_GetDblParamMin, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cdouble}), prob, paramName, p_dblParam)
 end
 
 function COPT_GetDblParamMax(prob, paramName, p_dblParam)
-    ccall((:COPT_GetDblParamMax, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cdouble}), prob, paramName, p_dblParam)
+    ccall((:COPT_GetDblParamMax, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cdouble}), prob, paramName, p_dblParam)
 end
 
 function COPT_ResetParam(prob)
@@ -407,39 +407,39 @@ function COPT_Reset(prob, iClearAll)
 end
 
 function COPT_GetIntAttr(prob, attrName, p_intAttr)
-    ccall((:COPT_GetIntAttr, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, attrName, p_intAttr)
+    ccall((:COPT_GetIntAttr, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, attrName, p_intAttr)
 end
 
 function COPT_GetDblAttr(prob, attrName, p_dblAttr)
-    ccall((:COPT_GetDblAttr, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cdouble}), prob, attrName, p_dblAttr)
+    ccall((:COPT_GetDblAttr, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cdouble}), prob, attrName, p_dblAttr)
 end
 
 function COPT_GetColIdx(prob, colName, p_iCol)
-    ccall((:COPT_GetColIdx, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, colName, p_iCol)
+    ccall((:COPT_GetColIdx, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, colName, p_iCol)
 end
 
 function COPT_GetRowIdx(prob, rowName, p_iRow)
-    ccall((:COPT_GetRowIdx, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, rowName, p_iRow)
+    ccall((:COPT_GetRowIdx, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, rowName, p_iRow)
 end
 
 function COPT_GetQConstrIdx(prob, qConstrName, p_iQConstr)
-    ccall((:COPT_GetQConstrIdx, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), prob, qConstrName, p_iQConstr)
+    ccall((:COPT_GetQConstrIdx, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Ptr{Cint}), prob, qConstrName, p_iQConstr)
 end
 
 function COPT_GetColInfo(prob, infoName, num, list, info)
-    ccall((:COPT_GetColInfo, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cint, Ptr{Cint}, Ptr{Cdouble}), prob, infoName, num, list, info)
+    ccall((:COPT_GetColInfo, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cint, Ptr{Cint}, Ptr{Cdouble}), prob, infoName, num, list, info)
 end
 
 function COPT_GetRowInfo(prob, infoName, num, list, info)
-    ccall((:COPT_GetRowInfo, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cint, Ptr{Cint}, Ptr{Cdouble}), prob, infoName, num, list, info)
+    ccall((:COPT_GetRowInfo, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cint, Ptr{Cint}, Ptr{Cdouble}), prob, infoName, num, list, info)
 end
 
 function COPT_GetQConstrInfo(prob, infoName, num, list, info)
-    ccall((:COPT_GetQConstrInfo, libcopt), Cint, (Ptr{copt_prob}, Cstring, Cint, Ptr{Cint}, Ptr{Cdouble}), prob, infoName, num, list, info)
+    ccall((:COPT_GetQConstrInfo, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}, Cint, Ptr{Cint}, Ptr{Cdouble}), prob, infoName, num, list, info)
 end
 
 function COPT_GetColType(prob, num, list, type)
-    ccall((:COPT_GetColType, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Cstring), prob, num, list, type)
+    ccall((:COPT_GetColType, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cchar}), prob, num, list, type)
 end
 
 function COPT_GetColBasis(prob, num, list, colBasis)
@@ -451,7 +451,7 @@ function COPT_GetRowBasis(prob, num, list, rowBasis)
 end
 
 function COPT_GetQConstrSense(prob, num, list, sense)
-    ccall((:COPT_GetQConstrSense, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Cstring), prob, num, list, sense)
+    ccall((:COPT_GetQConstrSense, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cint}, Ptr{Cchar}), prob, num, list, sense)
 end
 
 function COPT_GetQConstrRhs(prob, num, list, rhs)
@@ -483,19 +483,19 @@ function COPT_GetIndicatorIIS(prob, num, list, indicatorIIS)
 end
 
 function COPT_GetColName(prob, iCol, buff, buffSize, pReqSize)
-    ccall((:COPT_GetColName, libcopt), Cint, (Ptr{copt_prob}, Cint, Cstring, Cint, Ptr{Cint}), prob, iCol, buff, buffSize, pReqSize)
+    ccall((:COPT_GetColName, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cchar}, Cint, Ptr{Cint}), prob, iCol, buff, buffSize, pReqSize)
 end
 
 function COPT_GetRowName(prob, iRow, buff, buffSize, pReqSize)
-    ccall((:COPT_GetRowName, libcopt), Cint, (Ptr{copt_prob}, Cint, Cstring, Cint, Ptr{Cint}), prob, iRow, buff, buffSize, pReqSize)
+    ccall((:COPT_GetRowName, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cchar}, Cint, Ptr{Cint}), prob, iRow, buff, buffSize, pReqSize)
 end
 
 function COPT_GetQConstrName(prob, iQConstr, buff, buffSize, pReqSize)
-    ccall((:COPT_GetQConstrName, libcopt), Cint, (Ptr{copt_prob}, Cint, Cstring, Cint, Ptr{Cint}), prob, iQConstr, buff, buffSize, pReqSize)
+    ccall((:COPT_GetQConstrName, libcopt), Cint, (Ptr{copt_prob}, Cint, Ptr{Cchar}, Cint, Ptr{Cint}), prob, iQConstr, buff, buffSize, pReqSize)
 end
 
 function COPT_SetLogFile(prob, logfilename)
-    ccall((:COPT_SetLogFile, libcopt), Cint, (Ptr{copt_prob}, Cstring), prob, logfilename)
+    ccall((:COPT_SetLogFile, libcopt), Cint, (Ptr{copt_prob}, Ptr{Cchar}), prob, logfilename)
 end
 
 function COPT_SetLogCallback(prob, logcb, userdata)
