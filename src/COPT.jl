@@ -39,6 +39,8 @@ to the Julia code. Please open an issue at
 https://github.com/COPT-Public/COPT.jl.""")
 end
 
+include("MOI/MOI_wrapper.jl")
+
 # COPT exports all `COPT_xxx` and `copt_xxx` symbols. If you don't want all of
 # these symbols in your environment, then use `import COPT` instead of
 # `using COPT`.
