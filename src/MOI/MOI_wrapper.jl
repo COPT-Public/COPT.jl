@@ -82,7 +82,7 @@ end
 
 function _get_error_string(env::Env, ret::Cint)
     buffer = zeros(Cchar, COPT_BUFFSIZE)
-    if COPT_GetRetcodeMsg(ret, pointer(buffer), size(buffer)) == COPT_RETCODE_OK
+    if COPT_GetRetcodeMsg(ret, pointer(buffer), length(buffer)) == COPT_RETCODE_OK
         return unsafe_string(pointer(buffer))
     end
     return "COPT error $(ret): Unknown error code."
