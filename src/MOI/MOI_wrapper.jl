@@ -238,7 +238,6 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         model.prob = C_NULL
         model.env = env === nothing ? Env() : env
         model.name = ""
-        MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
         model.silent = false
         model.variable_primal = nothing
 
@@ -288,6 +287,8 @@ function MOI.empty!(model::Optimizer)
     model.env.attached_models += 1
     if model.silent
         MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 0)
+    else
+        MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
     end
     model.objective_type = _UNSET_OBJECTIVE
     model.objective_sense = nothing
