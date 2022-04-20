@@ -1654,7 +1654,7 @@ end
 
 function _copt_get_row_upper(model::Optimizer, copt_row::Cint)
     value = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_LB, 1, [copt_row], value)
+    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_UB, 1, [copt_row], value)
     _check_ret(model, ret)
     return value[] == +COPT_INFINITY ? +Inf : value[]
 end
