@@ -2991,7 +2991,7 @@ function MOI.get(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},S},
 ) where {S<:_SCALAR_SETS}
     rstat = Vector{Cint}(undef, length(model.affine_constraint_info))
-    ret = COPT_GetBasis(model.prob, C_NULL, rowBasis)
+    ret = COPT_GetBasis(model.prob, C_NULL, rstat)
     _check_ret(model, ret)
     cbasis = rstat[_info(model, c).row]
     if cbasis == COPT_BASIS_BASIC
@@ -3007,7 +3007,7 @@ function MOI.get(
     x::MOI.VariableIndex,
 )
     cstat = Vector{Cint}(undef, length(model.variable_info))
-    ret = COPT_GetBasis(model.prob, colBasis, C_NULL)
+    ret = COPT_GetBasis(model.prob, cstat, C_NULL)
     _check_ret(model, ret)
     vbasis = cstat[_info(model, x).column]
     if vbasis == COPT_BASIS_BASIC
