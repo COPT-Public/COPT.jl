@@ -807,9 +807,12 @@ function _zero_objective(model::Optimizer)
     ret = COPT_DelQuadObj(model.prob)
     _check_ret(model, ret)
     num_vars = length(model.variable_info)
-    obj = zeros(Float64, num_vars)
-    ret = COPT_SetColObj(model.prob, num_vars, C_NULL, obj)
-    _check_ret(model, ret)
+    # COPT returns an error when calling COPT_SetColObj() with no columns.
+    if num_vars > 0
+        obj = zeros(Float64, num_vars)
+        ret = COPT_SetColObj(model.prob, num_vars, C_NULL, obj)
+        _check_ret(model, ret)
+    end
     ret = COPT_SetObjConst(model.prob, 0.0)
     _check_ret(model, ret)
     return
