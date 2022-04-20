@@ -2050,12 +2050,12 @@ end
 
 function _copt_getsos(model::Optimizer, copt_row::Cint)
     p_reqsize = Ref{Cint}()
-    ret = COPT_GetSOSs(prob, 1, [row], C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetSOSs(model.prob, 1, [row], C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     sosind = Vector{Cint}(undef, num_elem)
     soswt = Vector{Cdouble}(undef, num_elem)
-    ret = COPT_GetSOSs(prob, 1, [row], C_NULL, C_NULL, C_NULL, sosind, soswt, num_elem, C_NULL)
+    ret = COPT_GetSOSs(model.prob, 1, [row], C_NULL, C_NULL, C_NULL, sosind, soswt, num_elem, C_NULL)
     _check_ret(model, ret)
     return sosind, soswt
 end
@@ -2180,7 +2180,7 @@ function _raw_lpstatus(model::Optimizer)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
     p_status = Ref{Cint}()
-    ret = COPT_GetIntAttr(prob, "LpStatus", p_status)
+    ret = COPT_GetIntAttr(model.prob, "LpStatus", p_status)
     _check_ret(model, ret)
     status = p_status[]
     if haskey(_RAW_LPSTATUS_STRINGS, status)
@@ -2199,7 +2199,7 @@ function _raw_mipstatus(model::Optimizer)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
     p_status = Ref{Cint}()
-    ret = COPT_GetIntAttr(prob, "MipStatus", p_status)
+    ret = COPT_GetIntAttr(model.prob, "MipStatus", p_status)
     _check_ret(model, ret)
     status = p_status[]
     if haskey(_RAW_MIPSTATUS_STRINGS, status)
