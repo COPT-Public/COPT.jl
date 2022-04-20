@@ -1850,6 +1850,16 @@ function MOI.add_constraint(
         )
     end
     indices, coefficients, I, J, V = _indices_and_coefficients(model, f)
+    # When COPT_AddQConstr() is called with an empty Q matrix, then COPT adds a
+    # linear constraint if the linear matrix is non-empty, or nothing otherwise.
+    # This makes is difficult to track row indices and to query slacks. Let's
+    # not allow this for now.
+    if length(V) == 0
+        error("""
+Adding a quadratic constraint with an empty Q matrix is not supported.
+Add a linear constraint instead.
+        """)
+    end
     sense, rhs = _sense_and_rhs(s)
     ret = COPT_AddQConstr(model.prob, length(indices), indices, coefficients, length(V), I, J, V, sense, rhs, C_NULL)
     _check_ret(model, ret)
