@@ -952,27 +952,34 @@ function MOI.get(
     p_numqnz = Ref{Cint}()
     ret = COPT_GetIntAttr(model.prob, COPT_INTATTR_QELEMS, p_numqnz)
     _check_ret(model, ret)
-    qrow = Array{Cint}(undef, p_numqnz[])
-    qcol = Array{Cint}(undef, p_numqnz[])
-    qval = Array{Float64}(undef, p_numqnz[])
-    ret = COPT_GetQuadObj(model.prob, p_numqnz, qrow, qcol, qval)
-    _check_ret(model, ret)
-    @assert p_numqnz[] == length(qval)
     q_terms = MOI.ScalarQuadraticTerm{Float64}[]
-    for (i, j, v) in zip(qrow, qcol, qval)
-        if iszero(v)
-            continue
+    # COPT returns an error when calling COPT_GetQuadObj() and no quadratic
+    # objective is available.
+    p_hasqobj = Ref{Cint}()
+    ret = COPT_GetIntAttr(model.prob, COPT_INTATTR_HASQOBJ, p_hasqobj)
+    _check_ret(model, ret)
+    if p_hasqobj[] != 0
+        qrow = Array{Cint}(undef, p_numqnz[])
+        qcol = Array{Cint}(undef, p_numqnz[])
+        qval = Array{Float64}(undef, p_numqnz[])
+        ret = COPT_GetQuadObj(model.prob, p_numqnz, qrow, qcol, qval)
+        _check_ret(model, ret)
+        @assert p_numqnz[] == length(qval)
+        for (i, j, v) in zip(qrow, qcol, qval)
+            if iszero(v)
+                continue
+            end
+            # See note in `_indices_and_coefficients`.
+            new_v = i == j ? 2v : v
+            push!(
+                q_terms,
+                MOI.ScalarQuadraticTerm(
+                    new_v,
+                    model.variable_info[CleverDicts.LinearIndex(i + 1)].index,
+                    model.variable_info[CleverDicts.LinearIndex(j + 1)].index,
+                ),
+            )
         end
-        # See note in `_indices_and_coefficients`.
-        new_v = i == j ? 2v : v
-        push!(
-            q_terms,
-            MOI.ScalarQuadraticTerm(
-                new_v,
-                model.variable_info[CleverDicts.LinearIndex(i + 1)].index,
-                model.variable_info[CleverDicts.LinearIndex(j + 1)].index,
-            ),
-        )
     end
     return MOI.Utilities.canonical(
         MOI.ScalarQuadraticFunction(q_terms, terms, constant[]),
