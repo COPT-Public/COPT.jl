@@ -2281,7 +2281,11 @@ _update_cache(::Optimizer, data::Vector{Float64}) = data
 function _update_cache(model::Optimizer, ::Nothing)
     n = length(model.variable_info)
     x = zeros(n)
-    ret = COPT_GetSolution(model.prob, x)
+    ret = if model.solved_as_mip
+        COPT_GetSolution(model.prob, x)
+    else
+        COPT_GetLpSolution(model.prob, x, C_NULL, C_NULL, C_NULL)
+    end
     _check_ret(model, ret)
     return x
 end
