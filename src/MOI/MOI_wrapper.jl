@@ -2050,12 +2050,12 @@ end
 
 function _copt_getsos(model::Optimizer, copt_row::Cint)
     p_reqsize = Ref{Cint}()
-    ret = COPT_GetSOSs(model.prob, 1, [row], C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetSOSs(model.prob, 1, [copt_row], C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     sosind = Vector{Cint}(undef, num_elem)
     soswt = Vector{Cdouble}(undef, num_elem)
-    ret = COPT_GetSOSs(model.prob, 1, [row], C_NULL, C_NULL, C_NULL, sosind, soswt, num_elem, C_NULL)
+    ret = COPT_GetSOSs(model.prob, 1, [copt_row], C_NULL, C_NULL, C_NULL, sosind, soswt, num_elem, C_NULL)
     _check_ret(model, ret)
     return sosind, soswt
 end
