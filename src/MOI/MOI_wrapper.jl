@@ -1893,7 +1893,7 @@ function MOI.get(
 ) where {S}
     row = Cint(_info(model, c).row - 1)
     rhs_p = Ref{Cdouble}()
-    ret = COPT_GetQConstrRhs(model.prob, 1, [row], rhs)
+    ret = COPT_GetQConstrRhs(model.prob, 1, [row], rhs_p)
     _check_ret(model, ret)
     return S(rhs_p[])
 end
