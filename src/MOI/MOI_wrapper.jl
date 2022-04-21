@@ -905,10 +905,10 @@ function MOI.get(
             push!(terms, MOI.ScalarAffineTerm(coefficient, index))
         end
     end
-    constant = Ref{Cdouble}()
-    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, constant)
+    p_constant = Ref{Cdouble}()
+    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, p_constant)
     _check_ret(model, ret)
-    return MOI.ScalarAffineFunction(terms, constant[])
+    return MOI.ScalarAffineFunction(terms, p_constant[])
 end
 
 function MOI.set(
@@ -945,8 +945,8 @@ function MOI.get(
         iszero(coefficient) && continue
         push!(terms, MOI.ScalarAffineTerm(coefficient, index))
     end
-    constant = Ref{Cdouble}()
-    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, constant)
+    p_constant = Ref{Cdouble}()
+    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, p_constant)
     _check_ret(model, ret)
     p_numqnz = Ref{Cint}()
     ret = COPT_GetIntAttr(model.prob, COPT_INTATTR_QELEMS, p_numqnz)
@@ -981,7 +981,7 @@ function MOI.get(
         end
     end
     return MOI.Utilities.canonical(
-        MOI.ScalarQuadraticFunction(q_terms, terms, constant[]),
+        MOI.ScalarQuadraticFunction(q_terms, terms, p_constant[]),
     )
 end
 
@@ -1304,10 +1304,10 @@ function _get_variable_lower_bound(model, info)
         @assert info.lower_bound_if_soc < 0.0
         return info.lower_bound_if_soc
     end
-    lb = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_LB, 1, Cint[info.column - 1], lb)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_LB, 1, Cint[info.column - 1], p_value)
     _check_ret(model, ret)
-    return lb[] == -COPT_INFINITY ? -Inf : lb[]
+    return p_value[] == -COPT_INFINITY ? -Inf : p_value[]
 end
 
 function _set_variable_upper_bound(model, info, value)
@@ -1317,10 +1317,10 @@ function _set_variable_upper_bound(model, info, value)
 end
 
 function _get_variable_upper_bound(model, info)
-    ub = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_UB, 1, Cint[info.column - 1], ub)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_UB, 1, Cint[info.column - 1], p_value)
     _check_ret(model, ret)
-    return ub[] == COPT_INFINITY ? Inf : ub[]
+    return p_value[] == COPT_INFINITY ? Inf : p_value[]
 end
 
 function MOI.delete(
@@ -1651,17 +1651,17 @@ function MOI.delete(
 end
 
 function _copt_get_row_lower(model::Optimizer, copt_row::Cint)
-    value = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_LB, 1, [copt_row], value)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_LB, 1, [copt_row], p_value)
     _check_ret(model, ret)
-    return value[] == -COPT_INFINITY ? -Inf : value[]
+    return p_value[] == -COPT_INFINITY ? -Inf : p_value[]
 end
 
 function _copt_get_row_upper(model::Optimizer, copt_row::Cint)
-    value = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_UB, 1, [copt_row], value)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_UB, 1, [copt_row], p_value)
     _check_ret(model, ret)
-    return value[] == +COPT_INFINITY ? +Inf : value[]
+    return p_value[] == +COPT_INFINITY ? +Inf : p_value[]
 end
 
 function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
@@ -1907,10 +1907,10 @@ function MOI.get(
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
     row = Cint(_info(model, c).row - 1)
-    rhs_p = Ref{Cdouble}()
-    ret = COPT_GetQConstrRhs(model.prob, 1, [row], rhs_p)
+    p_rhs = Ref{Cdouble}()
+    ret = COPT_GetQConstrRhs(model.prob, 1, [row], p_rhs)
     _check_ret(model, ret)
-    return S(rhs_p[])
+    return S(p_rhs[])
 end
 
 function _copt_getqconstr(model::Optimizer, c::MOI.ConstraintIndex)
@@ -2366,10 +2366,10 @@ function MOI.get(
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
     row = Cint(_info(model, c).row - 1)
-    xqxax = Ref{Cdouble}()
-    ret = COPT_GetQConstrInfo(model.prob, "Slack", 1, [row], xqxax)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetQConstrInfo(model.prob, "Slack", 1, [row], p_value)
     _check_ret(model, ret)
-    return xqxax[]
+    return p_value[]
 end
 
 function _dual_multiplier(model::Optimizer)
@@ -2413,22 +2413,22 @@ function MOI.get(
         dual = -_farkas_variable_dual(model, col)
         return min(0.0, dual)
     end
-    p = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p_value)
     _check_ret(model, ret)
     sense = MOI.get(model, MOI.ObjectiveSense())
     # The following is a heuristic for determining whether the reduced cost
     # applies to the lower or upper bound. It can be wrong by at most
     # `FeasibilityTol`.
-    if sense == MOI.MIN_SENSE && p[] < 0
+    if sense == MOI.MIN_SENSE && p_value[] < 0
         # If minimizing, the reduced cost must be negative (ignoring
         # tolerances).
-        return p[]
-    elseif sense == MOI.MAX_SENSE && p[] > 0
+        return p_value[]
+    elseif sense == MOI.MAX_SENSE && p_value[] > 0
         # If minimizing, the reduced cost must be positive (ignoring
         # tolerances). However, because of the MOI dual convention, we return a
         # negative value.
-        return -p[]
+        return -p_value[]
     else
         # The reduced cost, if non-zero, must related to the lower bound.
         return 0.0
@@ -2447,22 +2447,22 @@ function MOI.get(
         dual = -_farkas_variable_dual(model, col)
         return max(0.0, dual)
     end
-    p = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p_value)
     _check_ret(model, ret)
     sense = MOI.get(model, MOI.ObjectiveSense())
     # The following is a heuristic for determining whether the reduced cost
     # applies to the lower or upper bound. It can be wrong by at most
     # `FeasibilityTol`.
-    if sense == MOI.MIN_SENSE && p[] > 0
+    if sense == MOI.MIN_SENSE && p_value[] > 0
         # If minimizing, the reduced cost must be negative (ignoring
         # tolerances).
-        return p[]
-    elseif sense == MOI.MAX_SENSE && p[] < 0
+        return p_value[]
+    elseif sense == MOI.MAX_SENSE && p_value[] < 0
         # If minimizing, the reduced cost must be positive (ignoring
         # tolerances). However, because of the MOI dual convention, we return a
         # negative value.
-        return -p[]
+        return -p_value[]
     else
         # The reduced cost, if non-zero, must related to the lower bound.
         return 0.0
@@ -2483,10 +2483,10 @@ function MOI.get(
     if model.has_dual_certificate
         return -_farkas_variable_dual(model, col)
     end
-    p = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p_value)
     _check_ret(model, ret)
-    return _dual_multiplier(model) * p[]
+    return _dual_multiplier(model) * p_value[]
 end
 
 function MOI.get(
@@ -2500,10 +2500,10 @@ function MOI.get(
     if model.has_dual_certificate
         return model.certificate[row+1]
     end
-    p = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, "Dual", 1, [row], p)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetRowInfo(model.prob, "Dual", 1, [row], p_value)
     _check_ret(model, ret)
-    return _dual_multiplier(model) * p[]
+    return _dual_multiplier(model) * p_value[]
 end
 
 function MOI.get(
@@ -2584,17 +2584,17 @@ function MOI.get(
 end
 
 function _copt_get_int_attr(model::Optimizer, name::String)
-    p = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, name, p)
+    p_value = Ref{Cint}()
+    ret = COPT_GetIntAttr(model.prob, name, p_value)
     _check_ret(model, ret)
-    return p[]
+    return p_value[]
 end
 
 function _copt_get_dbl_attr(model::Optimizer, name::String)
-    p = Ref{Cdouble}()
-    ret = COPT_GetDblAttr(model.prob, name, p)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetDblAttr(model.prob, name, p_value)
     _check_ret(model, ret)
-    return p[]
+    return p_value[]
 end
 
 function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
