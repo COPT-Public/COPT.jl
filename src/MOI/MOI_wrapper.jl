@@ -2504,7 +2504,7 @@ function MOI.get(
     # checked to numeric tolerances. We use `cone_top_tol`.
     cone_top, cone_top_tol = true, 1e-6
     x = zeros(length(model.variable_info))
-    ret = COPT_GetSolution(model.prob, x)
+    ret = COPT_GetLpSolution(model.prob, x, C_NULL, C_NULL, C_NULL)
     _check_ret(model, ret)
     ∇f = zeros(length(x))
     a_i, a_v, qrow, qcol, qval = _copt_getqconstr(model, c)
