@@ -48,7 +48,7 @@ mutable struct _ConstraintInfo
     row::Int
     set::MOI.AbstractSet
     # Storage for constraint names. Where possible, these are also stored in the
-    # CPLEX model.
+    # COPT model.
     name::String
     _ConstraintInfo(row::Int, set::MOI.AbstractSet) = new(row, set, "")
 end
@@ -56,8 +56,8 @@ end
 mutable struct Env
     ptr::Ptr{copt_env}
     # These fields keep track of how many models the `Env` is used for to help
-    # with finalizing. If you finalize an Env first, then the model, CPLEX will
-    # throw an error.
+    # with finalizing. We first finalize the attached models, then the
+    # environment.
     finalize_called::Bool
     attached_models::Int
 
@@ -116,7 +116,7 @@ end
 
 Create a new Optimizer object.
 
-You can share CPLEX `Env`s between models by passing an instance of `Env` as the
+You can share COPT `Env`s between models by passing an instance of `Env` as the
 first argument.
 
 Set optimizer attributes using `MOI.RawOptimizerAttribute` or
@@ -125,30 +125,30 @@ Set optimizer attributes using `MOI.RawOptimizerAttribute` or
 ## Example
 
 ```julia
-using JuMP, CPLEX
-const env = CPLEX.Env()
-model = JuMP.Model(() -> CPLEX.Optimizer(env)
-set_optimizer_attribute(model, "CPXPARAM_ScreenOutput", 0)
+using JuMP, COPT
+const env = COPT.Env()
+model = JuMP.Model(() -> COPT.Optimizer(env)
+set_optimizer_attribute(model, "LogToConsole", 0)
 ```
 
-## `CPLEX.PassNames`
+## `COPT.PassNames`
 
 By default, variable and constraint names are stored in the MOI wrapper, but are
-_not_ passed to the inner CPLEX model object because doing so can lead to a
-large performance degradation. The downside of not passing names is that various
-log messages from CPLEX will report names like constraint "R1" and variable "C2"
+_not_ passed to the inner COPT model object because doing so can lead to a large
+performance degradation. The downside of not passing names is that various log
+messages from COPT will report names like constraint "R1" and variable "C2"
 instead of their actual names. You can change this behavior using
-`CPLEX.PassNames` to force CPLEX.jl to pass variable and constraint names to the
-inner CPLEX model object:
+`COPT.PassNames` to force COPT.jl to pass variable and constraint names to the
+inner COPT model object:
 
 ```julia
-using JuMP, CPLEX
-model = JuMP.Model(CPLEX.Optimizer)
-set_optimizer_attribute(model, CPLEX.PassNames(), true)
+using JuMP, COPT
+model = JuMP.Model(COPT.Optimizer)
+set_optimizer_attribute(model, COPT.PassNames(), true)
 ```
 """
 mutable struct Optimizer <: MOI.AbstractOptimizer
-    # The low-level CPLEX model.
+    # The low-level COPT model.
     prob::Ptr{copt_prob}
     env::Env
 
@@ -165,7 +165,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     objective_type::_ObjectiveType
     objective_sense::Union{Nothing,MOI.OptimizationSense}
 
-    # A mapping from the MOI.VariableIndex to the CPLEX column. _VariableInfo
+    # A mapping from the MOI.VariableIndex to the COPT column. _VariableInfo
     # also stores some additional fields like what bounds have been added, the
     # variable type, and the names of VariableIndex-in-Set constraints.
     variable_info::CleverDicts.CleverDict{MOI.VariableIndex,_VariableInfo}
@@ -202,17 +202,13 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         Dict{String,Union{Nothing,MOI.ConstraintIndex}},
     }
 
-    # CPLEX has more than one configurable memory limit, but these do not seem
-    # to cover all situations, for example, there are no memory limits for
-    # solving LPs with the many possible algorithms (simplex, barrier, etc...).
-    # In such situations, CPLEX does detect when it needs more memory than it
-    # is available, but returns an error code instead of setting the
-    # termination status (like it does for the configurable memory and time
-    # limits).  For convenience, and homogeinity with other solvers, we save
-    # the code obtained inside `_optimize!` in `ret_optimize`, and do not throw
-    # an exception case it should be interpreted as a termination status.
-    # Then, when/if the termination status is queried, we may override the
-    # result taking into account the `ret_optimize` field.
+    # COPT does detect when it needs more memory than it is available, but
+    # returns an error code instead of setting the termination status (like it
+    # does for the time limit). For convenience, and homogeinity with other
+    # solvers, we save the code obtained inside `_optimize!` in `ret_optimize`,
+    # and do not throw an exception case it should be interpreted as a
+    # termination status. Then, when/if the termination status is queried, we
+    # may override the result taking into account the `ret_optimize` field.
     ret_optimize::Cint
     solved_as_mip::Bool
 
@@ -328,8 +324,8 @@ end
 """
     PassNames() <: MOI.AbstractOptimizerAttribute
 
-An optimizer attribute to control whether CPLEX.jl should pass names to the
-inner CPLEX model object. See the docstring of `CPLEX.Optimizer` for more
+An optimizer attribute to control whether COPT.jl should pass names to the
+inner COPT model object. See the docstring of `COPT.Optimizer` for more
 information.
 """
 struct PassNames <: MOI.AbstractOptimizerAttribute end
@@ -381,9 +377,10 @@ function MOI.supports_constraint(
     return true
 end
 
-# We choose _not_ to support ScalarAffineFunction-in-Interval and
-# ScalarQuadraticFunction-in-Interval because CPLEX introduces some slack
-# variables that makes it hard to keep track of the column indices.
+# ScalarAffineFunction-in-Interval is not supported by COPT.jl because COPT.jl
+# was adopted from CPLEX.jl and CPLEX does not support ranged rows (without
+# introducing slack variables). COPT does support ranged rows directly, so we
+# actually could allow ScalarAffineFunction-in-Interval constraints.
 
 function MOI.supports_constraint(
     ::Optimizer,
@@ -404,7 +401,7 @@ function MOI.supports_constraint(
     ::Type{MOI.ScalarQuadraticFunction{Float64}},
     ::Type{F},
 ) where {F<:Union{MOI.LessThan{Float64},MOI.GreaterThan{Float64}}}
-    # Note: CPLEX does not support quadratic equality constraints.
+    # Note: COPT does not support quadratic equality constraints.
     return true
 end
 
@@ -574,14 +571,14 @@ function _indices_and_coefficients(
         I[i] = Cint(column(model, term.variable_1) - 1)
         J[i] = Cint(column(model, term.variable_2) - 1)
         V[i] = term.coefficient
-        # CPLEX returns a list of terms. MOI requires 0.5 x' Q x. So, to get
+        # COPT returns a list of terms. MOI requires 0.5 x' Q x. So, to get
         # from
-        #   CPLEX -> MOI => multiply diagonals by 2.0
-        #   MOI -> CPLEX => multiply diagonals by 0.5
+        #   COPT -> MOI => multiply diagonals by 2.0
+        #   MOI -> COPT => multiply diagonals by 0.5
         # Example: 2x^2 + x*y + y^2
         #   |x y| * |a b| * |x| = |ax+by bx+cy| * |x| = 0.5ax^2 + bxy + 0.5cy^2
         #           |b c|   |y|                   |y|
-        #   CPLEX needs: (I, J, V) = ([0, 0, 1], [0, 1, 1], [2, 1, 1])
+        #   COPT needs: (I, J, V) = ([0, 0, 1], [0, 1, 1], [2, 1, 1])
         #   MOI needs:
         #     [SQT(4.0, x, x), SQT(1.0, x, y), SQT(2.0, y, y)]
         if I[i] == J[i]
