@@ -440,6 +440,20 @@ function _search_param_attr(model::Optimizer, name::AbstractString)
     return convert(Int, p_type[])
 end
 
+function _copt_get_int_attr(model::Optimizer, name::String)
+    p_value = Ref{Cint}()
+    ret = COPT_GetIntAttr(model.prob, name, p_value)
+    _check_ret(model, ret)
+    return p_value[]
+end
+
+function _copt_get_dbl_attr(model::Optimizer, name::String)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetDblAttr(model.prob, name, p_value)
+    _check_ret(model, ret)
+    return p_value[]
+end
+
 function MOI.set(model::Optimizer, param::MOI.RawOptimizerAttribute, value)
     param_type = _search_param_attr(model, param.name)
     if param_type == 0
@@ -905,10 +919,8 @@ function MOI.get(
             push!(terms, MOI.ScalarAffineTerm(coefficient, index))
         end
     end
-    p_constant = Ref{Cdouble}()
-    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, p_constant)
-    _check_ret(model, ret)
-    return MOI.ScalarAffineFunction(terms, p_constant[])
+    constant = _copt_get_dbl_attr(model, "ObjConst")
+    return MOI.ScalarAffineFunction(terms, constant)
 end
 
 function MOI.set(
@@ -945,22 +957,17 @@ function MOI.get(
         iszero(coefficient) && continue
         push!(terms, MOI.ScalarAffineTerm(coefficient, index))
     end
-    p_constant = Ref{Cdouble}()
-    ret = COPT_GetDblAttr(model.prob, COPT_DBLATTR_OBJCONST, p_constant)
-    _check_ret(model, ret)
-    p_numqnz = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, COPT_INTATTR_QELEMS, p_numqnz)
-    _check_ret(model, ret)
+    constant = _copt_get_dbl_attr(model, "ObjConst")
     q_terms = MOI.ScalarQuadraticTerm{Float64}[]
     # COPT returns an error when calling COPT_GetQuadObj() and no quadratic
     # objective is available.
-    p_hasqobj = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, COPT_INTATTR_HASQOBJ, p_hasqobj)
-    _check_ret(model, ret)
-    if p_hasqobj[] != 0
-        qrow = Array{Cint}(undef, p_numqnz[])
-        qcol = Array{Cint}(undef, p_numqnz[])
-        qval = Array{Float64}(undef, p_numqnz[])
+    has_qobj = _copt_get_int_attr(model, "HasQObj")
+    if has_qobj != 0
+        num_qnz = _copt_get_int_attr(model, "QElems")
+        qrow = Array{Cint}(undef, num_qnz)
+        qcol = Array{Cint}(undef, num_qnz)
+        qval = Array{Float64}(undef, num_qnz)
+        p_numqnz = Ref{Cint}()
         ret = COPT_GetQuadObj(model.prob, p_numqnz, qrow, qcol, qval)
         _check_ret(model, ret)
         @assert p_numqnz[] == length(qval)
@@ -981,7 +988,7 @@ function MOI.get(
         end
     end
     return MOI.Utilities.canonical(
-        MOI.ScalarQuadraticFunction(q_terms, terms, p_constant[]),
+        MOI.ScalarQuadraticFunction(q_terms, terms, constant),
     )
 end
 
@@ -2197,10 +2204,7 @@ function _raw_lpstatus(model::Optimizer)
     if haskey(_ERROR_TO_STATUS, model.ret_optimize)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
-    p_status = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, "LpStatus", p_status)
-    _check_ret(model, ret)
-    status = p_status[]
+    status = _copt_get_int_attr(model, "LpStatus")
     if haskey(_RAW_LPSTATUS_STRINGS, status)
         return _RAW_LPSTATUS_STRINGS[status]
     end
@@ -2216,10 +2220,7 @@ function _raw_mipstatus(model::Optimizer)
     if haskey(_ERROR_TO_STATUS, model.ret_optimize)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
-    p_status = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, "MipStatus", p_status)
-    _check_ret(model, ret)
-    status = p_status[]
+    status = _copt_get_int_attr(model, "MipStatus")
     if haskey(_RAW_MIPSTATUS_STRINGS, status)
         return _RAW_MIPSTATUS_STRINGS[status]
     end
@@ -2255,10 +2256,8 @@ function MOI.get(model::Optimizer, attr::MOI.PrimalStatus)
         return MOI.NO_SOLUTION
     end
     attr_name = model.solved_as_mip ? "HasMipSol" : "HasLpSol"
-    p_value = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, attr_name, p_value)
-    _check_ret(model, ret)
-    if p_value[] != 0
+    has_sol = _copt_get_int_attr(model, attr_name)
+    if has_sol != 0
         return MOI.FEASIBLE_POINT
     end
     return MOI.NO_SOLUTION
@@ -2271,10 +2270,8 @@ function MOI.get(model::Optimizer, attr::MOI.DualStatus)
     end
     # Dual solution only available for non-MIP solve.
     if !model.solved_as_mip
-        p_value = Ref{Cint}()
-        ret = COPT_GetIntAttr(model.prob, "HasLpSol", p_value)
-        _check_ret(model, ret)
-        if p_value[] != 0
+        has_sol = _copt_get_int_attr(model, "HasLpSol")
+        if has_sol != 0
             return MOI.FEASIBLE_POINT
         end
     end
@@ -2581,20 +2578,6 @@ function MOI.get(
         end
     end
     return 0.0
-end
-
-function _copt_get_int_attr(model::Optimizer, name::String)
-    p_value = Ref{Cint}()
-    ret = COPT_GetIntAttr(model.prob, name, p_value)
-    _check_ret(model, ret)
-    return p_value[]
-end
-
-function _copt_get_dbl_attr(model::Optimizer, name::String)
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetDblAttr(model.prob, name, p_value)
-    _check_ret(model, ret)
-    return p_value[]
 end
 
 function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
