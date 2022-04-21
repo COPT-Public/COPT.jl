@@ -2326,6 +2326,20 @@ function MOI.get(
     return MOI.get(model, MOI.VariablePrimal(), MOI.VariableIndex(c.value))
 end
 
+function _copt_get_row(model::Optimizer, copt_row::Cint)
+    p_reqsize = Ref{Cint}()
+    ret = COPT_GetRows(model.prob, 1, [copt_row], C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
+    rowbeg = Array{Cint}(undef, 1)
+    rowcnt = Array{Cint}(undef, 1)
+    columns = Array{Cint}(undef, num_elem)
+    coefficients = Array{Cdouble}(undef, num_elem)
+    ret = COPT_GetRows(model.prob, 1, [copt_row], rowbeg, rowcnt, columns, coefficients, num_elem, p_reqsize)
+    _check_ret(model, ret)
+    return columns, coefficients
+end
+
 function MOI.get(
     model::Optimizer,
     attr::MOI.ConstraintPrimal,
@@ -2334,10 +2348,21 @@ function MOI.get(
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
     row = Cint(_info(model, c).row - 1)
-    ax = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, "Slack", 1, [row], ax)
-    _check_ret(model, ret)
-    return ax[]
+    ax = 0.0
+    # COPT_GetRowInfo() allows to query the row value only for non-MIP solutions.
+    if model.solved_as_mip
+        columns, coefficients = _copt_get_row(model, row)
+        model.variable_primal = _update_cache(model, model.variable_primal)
+        for (col, coef) in zip(columns, coefficients)
+            ax += coef * model.variable_primal[col+1]
+        end
+    else
+        p_ax = Ref{Cdouble}()
+        ret = COPT_GetRowInfo(model.prob, "Slack", 1, [row], p_ax)
+        _check_ret(model, ret)
+        ax = p_ax[]
+    end
+    return ax
 end
 
 function MOI.get(
