@@ -1264,13 +1264,13 @@ function _set_variable_lower_bound(model, info, value)
     if info.num_soc_constraints == 0
         # No SOC constraints, set directly.
         @assert isnan(info.lower_bound_if_soc)
-        ret = COPT_SetColLower(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cdouble}(value))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], Cdouble[value])
         _check_ret(model, ret)
     elseif value >= 0.0
         # Regardless of whether there are SOC constraints, this is a valid bound
         # for the SOC constraint and should over-ride any previous bounds.
         info.lower_bound_if_soc = NaN
-        ret = COPT_SetColLower(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cdouble}(value))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], Cdouble[value])
         _check_ret(model, ret)
     elseif isnan(info.lower_bound_if_soc)
         # Previously, we had a non-negative lower bound (i.e., it was set in the
@@ -1278,7 +1278,7 @@ function _set_variable_lower_bound(model, info, value)
         # still some SOC constraints, so we cache `value` and set the variable
         # lower bound to `0.0`.
         @assert value < 0.0
-        ret = COPT_SetColLower(model.prob, 1, Ref{Cint}(info.column - 1), Ref(0.0))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [0.0])
         _check_ret(model, ret)
         info.lower_bound_if_soc = value
     else
@@ -1305,20 +1305,20 @@ function _get_variable_lower_bound(model, info)
         return info.lower_bound_if_soc
     end
     lb = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_LB, 1, Ref{Cint}(info.column - 1), lb)
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_LB, 1, Cint[info.column - 1], lb)
     _check_ret(model, ret)
     return lb[] == -COPT_INFINITY ? -Inf : lb[]
 end
 
 function _set_variable_upper_bound(model, info, value)
-    ret = COPT_SetColUpper(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cdouble}(value))
+    ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], Cdouble[value])
     _check_ret(model, ret)
     return
 end
 
 function _get_variable_upper_bound(model, info)
     ub = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_UB, 1, Ref{Cint}(info.column - 1), ub)
+    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_UB, 1, Cint[info.column - 1], ub)
     _check_ret(model, ret)
     return ub[] == COPT_INFINITY ? Inf : ub[]
 end
@@ -1431,23 +1431,21 @@ function MOI.add_constraint(
     ::MOI.ZeroOne,
 )
     info = _info(model, f)
-    col = Cint(info.column - 1)
-    p_col = Ref(col)
-    ret = COPT_SetColType(model.prob, 1, p_col, Ref{Cchar}(COPT_BINARY))
+    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_BINARY])
     _check_ret(model, ret)
     # Round bounds to avoid the CPLEX warning:
     #   Warning:  Non-integral bounds for integer variables rounded.
     # See issue https://github.com/jump-dev/CPLEX.jl/issues/311
     if info.bound == _NONE
-        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(0.0))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [0.0])
         _check_ret(model, ret)
-        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(1.0))
+        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [1.0])
         _check_ret(model, ret)
     elseif info.bound == _GREATER_THAN
-        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(1.0))
+        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [1.0])
         _check_ret(model, ret)
     elseif info.bound == _LESS_THAN
-        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(0.0))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [0.0])
         _check_ret(model, ret)
     end
     info.type = COPT_BINARY
@@ -1460,24 +1458,22 @@ function MOI.delete(
 )
     MOI.throw_if_not_valid(model, c)
     info = _info(model, c)
-    col = Cint(info.column - 1)
-    p_col = Ref(col)
-    ret = COPT_SetColType(model.prob, 1, p_col, Ref{Cchar}(COPT_CONTINUOUS))
+    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_CONTINUOUS])
     _check_ret(model, ret)
     # When deleting the ZeroOne bound, reset any bounds that were added. If no
     # _NONE, we added '[0, 1]'. If _GREATER_THAN, we added '1]', if _LESS_THAN,
     # we added '[0'. If it is anything else, both bounds were set by the user,
     # so we don't need to worry.
     if info.bound == _NONE
-        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(-COPT_INFINITY))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [-COPT_INFINITY])
         _check_ret(model, ret)
-        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(+COPT_INFINITY))
+        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [+COPT_INFINITY])
         _check_ret(model, ret)
     elseif info.bound == _GREATER_THAN
-        ret = COPT_SetColUpper(model.prob, 1, p_col, Ref(+COPT_INFINITY))
+        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [+COPT_INFINITY])
         _check_ret(model, ret)
     elseif info.bound == _LESS_THAN
-        ret = COPT_SetColLower(model.prob, 1, p_col, Ref(-COPT_INFINITY))
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [-COPT_INFINITY])
         _check_ret(model, ret)
     end
     info.type = COPT_CONTINUOUS
@@ -1500,7 +1496,7 @@ function MOI.add_constraint(
     ::MOI.Integer,
 )
     info = _info(model, f)
-    ret = COPT_SetColType(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cchar}(COPT_INTEGER))
+    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_INTEGER])
     _check_ret(model, ret)
     info.type = COPT_INTEGER
     return MOI.ConstraintIndex{MOI.VariableIndex,MOI.Integer}(f.value)
@@ -1512,7 +1508,7 @@ function MOI.delete(
 )
     MOI.throw_if_not_valid(model, c)
     info = _info(model, c)
-    ret = COPT_SetColType(model.prob, 1, Ref{Cint}(info.column - 1), Ref{Cchar}(COPT_CONTINUOUS))
+    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_CONTINUOUS])
     _check_ret(model, ret)
     info.type = COPT_CONTINUOUS
     model.name_to_constraint_index = nothing
@@ -1575,7 +1571,7 @@ function MOI.add_constraint(
         _ConstraintInfo(length(model.affine_constraint_info) + 1, s)
     indices, coefficients = _indices_and_coefficients(model, f)
     sense, rhs = _sense_and_rhs(s)
-    ret = COPT_AddRows(model.prob, 1, Ref{Cint}(0), Ref{Cint}(length(indices)), indices, coefficients, Ref{Cchar}(sense), Ref{Cdouble}(rhs), C_NULL, C_NULL)
+    ret = COPT_AddRows(model.prob, 1, Cint[0], Cint[length(indices)], indices, coefficients, Cchar[sense], Cdouble[rhs], C_NULL, C_NULL)
     _check_ret(model, ret)
     return MOI.ConstraintIndex{typeof(f),typeof(s)}(model.last_constraint_index)
 end
@@ -1642,7 +1638,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},<:Any},
 )
     row = _info(model, c).row
-    ret = COPT_DelRows(model.prob, 1, Ref{Cint}(row - 1))
+    ret = COPT_DelRows(model.prob, 1, Cint[row - 1])
     _check_ret(model, ret)
     for (key, info) in model.affine_constraint_info
         if info.row > row
@@ -1672,7 +1668,7 @@ function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
     if value == -Inf
         value = -COPT_INFINITY
     end
-    ret = COPT_SetRowLower(model.prob, 1, [copt_row], Ref{Cdouble}(value))
+    ret = COPT_SetRowLower(model.prob, 1, [copt_row], Cdouble[value])
     _check_ret(model, ret)
 end
 
@@ -1680,7 +1676,7 @@ function _copt_set_row_upper(model::Optimizer, copt_row::Cint, value)
     if value == +Inf
         value = +COPT_INFINITY
     end
-    ret = COPT_SetRowUpper(model.prob, 1, [copt_row], Ref{Cdouble}(value))
+    ret = COPT_SetRowUpper(model.prob, 1, [copt_row], Cdouble[value])
     _check_ret(model, ret)
 end
 
@@ -1763,7 +1759,7 @@ function MOI.set(
 )
     info = _info(model, c)
     if model.pass_names && info.name != name && isascii(name)
-        ret = COPT_SetRowNames(model.prob, 1, Ref{Cint}(info.row - 1), [name])
+        ret = COPT_SetRowNames(model.prob, 1, Cint[info.row - 1], [name])
         _check_ret(model, ret)
     end
     info.name = name
@@ -1893,7 +1889,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
     info = _info(model, c)
-    ret = COPT_DelQConstrs(model.prob, 1, Ref{Cint}(info.row - 1))
+    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row - 1])
     _check_ret(model, ret)
     for (key, info_2) in model.quadratic_constraint_info
         if info_2.row > info.row
