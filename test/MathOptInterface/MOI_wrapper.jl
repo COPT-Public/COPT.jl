@@ -30,9 +30,34 @@ function test_runtests()
             # TODO(odow): new tests
             "test_unbounded_",
             "test_infeasible_",
-            # CPLEX doesn't support nonconvex QCPs
+            # COPT does not support nonconvex QCPs
             "test_quadratic_nonconvex_",
             "test_conic_SecondOrderCone_negative_post_bound_3",
+            # COPT does not support QP/QCP/SOCP with discrete variables
+            "test_quadratic_Integer_SecondOrderCone",
+            # COPT does not support quadratic constraints with empty Q matrix
+            "test_basic_VectorQuadraticFunction_GeometricMeanCone",
+            # COPT does not provide dual solution for quadratic constraints
+            "test_conic_GeometricMeanCone_VectorAffineFunction",
+            "test_conic_GeometricMeanCone_VectorAffineFunction_2",
+            "test_conic_GeometricMeanCone_VectorOfVariables",
+            "test_conic_GeometricMeanCone_VectorOfVariables_2",
+            "test_conic_RotatedSecondOrderCone_INFEASIBLE_2",
+            "test_conic_RotatedSecondOrderCone_VectorAffineFunction",
+            "test_conic_RotatedSecondOrderCone_VectorOfVariables",
+            "test_conic_RotatedSecondOrderCone_out_of_order",
+            "test_conic_SecondOrderCone_Nonnegatives",
+            "test_conic_SecondOrderCone_Nonpositives",
+            "test_conic_SecondOrderCone_VectorAffineFunction",
+            "test_conic_SecondOrderCone_VectorOfVariables",
+            "test_conic_SecondOrderCone_out_of_order",
+            "test_constraint_PrimalStart_DualStart_SecondOrderCone",
+            "test_quadratic_SecondOrderCone_basic",
+            "test_quadratic_constraint_GreaterThan",
+            "test_quadratic_constraint_LessThan",
+            "test_quadratic_constraint_basic",
+            "test_quadratic_constraint_integration",
+            "test_quadratic_constraint_minimize",
         ],
     )
     return
