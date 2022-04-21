@@ -290,6 +290,7 @@ function MOI.empty!(model::Optimizer)
     else
         MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
     end
+    model.name = ""
     model.objective_type = _UNSET_OBJECTIVE
     model.objective_sense = nothing
     empty!(model.variable_info)
@@ -310,6 +311,7 @@ function MOI.empty!(model::Optimizer)
 end
 
 function MOI.is_empty(model::Optimizer)
+    model.name != "" && return false
     model.objective_type != _UNSET_OBJECTIVE && return false
     model.objective_sense !== nothing && return false
     !isempty(model.variable_info) && return false
