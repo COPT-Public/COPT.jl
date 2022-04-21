@@ -72,7 +72,7 @@ mutable struct Env
             e.finalize_called = true
             if e.attached_models == 0
                 # Only finalize the model if there are no models using it.
-                COPT_CloseEnv(Ref(e.ptr))
+                COPT_DeleteEnv(Ref(e.ptr))
                 e.ptr = C_NULL
             end
         end
@@ -261,7 +261,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
             elseif m.env.finalize_called && m.env.attached_models == 0
                 # We delayed finalizing `m.env` earlier because there were still
                 # models attached. Finalize it now.
-                COPT_CloseEnv(Ref(m.env.ptr))
+                COPT_DelteEnv(Ref(m.env.ptr))
                 m.env.ptr = C_NULL
             end
         end
