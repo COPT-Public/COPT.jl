@@ -454,6 +454,28 @@ function _copt_get_dbl_attr(model::Optimizer, name::String)
     return p_value[]
 end
 
+function _copt_get_col_info(model::Optimizer, name::String, copt_col)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetColInfo(model.prob, name, 1, Cint[copt_col], p_value)
+    _check_ret(model, ret)
+    return p_value[]
+end
+
+function _copt_get_col_info(model::Optimizer, name::String)
+    num_col = length(model.variable_info)
+    values = Array{Cdouble}(undef, num_col)
+    ret = COPT_GetColInfo(model.prob, name, num_col, C_NULL, values)
+    _check_ret(model, ret)
+    return values
+end
+
+function _copt_get_row_info(model::Optimizer, name::String, copt_row)
+    p_value = Ref{Cdouble}()
+    ret = COPT_GetRowInfo(model.prob, name, 1, [copt_row], p_value)
+    _check_ret(model, ret)
+    return p_value[]
+end
+
 function MOI.set(model::Optimizer, param::MOI.RawOptimizerAttribute, value)
     param_type = _search_param_attr(model, param.name)
     if param_type == 0
@@ -909,9 +931,7 @@ function MOI.get(
             "Unable to get objective function. Currently: $(model.objective_type).",
         )
     end
-    dest = zeros(length(model.variable_info))
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_OBJ, length(dest), C_NULL, dest)
-    _check_ret(model, ret)
+    dest = _copt_get_col_info(model, "Obj")
     terms = MOI.ScalarAffineTerm{Float64}[]
     for (index, info) in model.variable_info
         coefficient = dest[info.column]
@@ -948,9 +968,7 @@ function MOI.get(
     model::Optimizer,
     ::MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}},
 )
-    dest = zeros(length(model.variable_info))
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_OBJ, length(dest), C_NULL, dest)
-    _check_ret(model, ret)
+    dest = _copt_get_col_info(model, "Obj")
     terms = MOI.ScalarAffineTerm{Float64}[]
     for (index, info) in model.variable_info
         coefficient = dest[info.column]
@@ -1311,10 +1329,8 @@ function _get_variable_lower_bound(model, info)
         @assert info.lower_bound_if_soc < 0.0
         return info.lower_bound_if_soc
     end
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_LB, 1, Cint[info.column - 1], p_value)
-    _check_ret(model, ret)
-    return p_value[] == -COPT_INFINITY ? -Inf : p_value[]
+    lb = _copt_get_col_info(model, "LB", info.column - 1)
+    return lb == -COPT_INFINITY ? -Inf : lb
 end
 
 function _set_variable_upper_bound(model, info, value)
@@ -1324,10 +1340,8 @@ function _set_variable_upper_bound(model, info, value)
 end
 
 function _get_variable_upper_bound(model, info)
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, COPT_DBLINFO_UB, 1, Cint[info.column - 1], p_value)
-    _check_ret(model, ret)
-    return p_value[] == COPT_INFINITY ? Inf : p_value[]
+    ub = _copt_get_col_info(model, "UB", info.column - 1)
+    return ub == COPT_INFINITY ? Inf : ub
 end
 
 function MOI.delete(
@@ -1658,17 +1672,13 @@ function MOI.delete(
 end
 
 function _copt_get_row_lower(model::Optimizer, copt_row::Cint)
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_LB, 1, [copt_row], p_value)
-    _check_ret(model, ret)
-    return p_value[] == -COPT_INFINITY ? -Inf : p_value[]
+    lb = _copt_get_row_info(model, "LB", copt_row)
+    return lb == -COPT_INFINITY ? -Inf : lb
 end
 
 function _copt_get_row_upper(model::Optimizer, copt_row::Cint)
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, COPT_DBLINFO_UB, 1, [copt_row], p_value)
-    _check_ret(model, ret)
-    return p_value[] == +COPT_INFINITY ? +Inf : p_value[]
+    ub = _copt_get_row_info(model, "UB", copt_row)
+    return ub == COPT_INFINITY ? Inf : ub
 end
 
 function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
@@ -2347,10 +2357,7 @@ function MOI.get(
             ax += coef * model.variable_primal[col+1]
         end
     else
-        p_ax = Ref{Cdouble}()
-        ret = COPT_GetRowInfo(model.prob, "Slack", 1, [row], p_ax)
-        _check_ret(model, ret)
-        ax = p_ax[]
+        ax = _copt_get_row_info(model, "Slack", row)
     end
     return ax
 end
@@ -2410,22 +2417,20 @@ function MOI.get(
         dual = -_farkas_variable_dual(model, col)
         return min(0.0, dual)
     end
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p_value)
-    _check_ret(model, ret)
+    redcost = _copt_get_col_info(model, "RedCost", col)
     sense = MOI.get(model, MOI.ObjectiveSense())
     # The following is a heuristic for determining whether the reduced cost
     # applies to the lower or upper bound. It can be wrong by at most
     # `FeasibilityTol`.
-    if sense == MOI.MIN_SENSE && p_value[] < 0
+    if sense == MOI.MIN_SENSE && redcost < 0
         # If minimizing, the reduced cost must be negative (ignoring
         # tolerances).
-        return p_value[]
-    elseif sense == MOI.MAX_SENSE && p_value[] > 0
+        return redcost
+    elseif sense == MOI.MAX_SENSE && redcost > 0
         # If minimizing, the reduced cost must be positive (ignoring
         # tolerances). However, because of the MOI dual convention, we return a
         # negative value.
-        return -p_value[]
+        return -redcost
     else
         # The reduced cost, if non-zero, must related to the lower bound.
         return 0.0
@@ -2444,22 +2449,20 @@ function MOI.get(
         dual = -_farkas_variable_dual(model, col)
         return max(0.0, dual)
     end
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p_value)
-    _check_ret(model, ret)
+    redcost = _copt_get_col_info(model, "RedCost", col)
     sense = MOI.get(model, MOI.ObjectiveSense())
     # The following is a heuristic for determining whether the reduced cost
     # applies to the lower or upper bound. It can be wrong by at most
     # `FeasibilityTol`.
-    if sense == MOI.MIN_SENSE && p_value[] > 0
+    if sense == MOI.MIN_SENSE && redcost > 0
         # If minimizing, the reduced cost must be negative (ignoring
         # tolerances).
-        return p_value[]
-    elseif sense == MOI.MAX_SENSE && p_value[] < 0
+        return redcost
+    elseif sense == MOI.MAX_SENSE && redcost < 0
         # If minimizing, the reduced cost must be positive (ignoring
         # tolerances). However, because of the MOI dual convention, we return a
         # negative value.
-        return -p_value[]
+        return -redcost
     else
         # The reduced cost, if non-zero, must related to the lower bound.
         return 0.0
@@ -2480,10 +2483,8 @@ function MOI.get(
     if model.has_dual_certificate
         return -_farkas_variable_dual(model, col)
     end
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetColInfo(model.prob, "RedCost", 1, [col], p_value)
-    _check_ret(model, ret)
-    return _dual_multiplier(model) * p_value[]
+    redcost = _copt_get_col_info(model, "RedCost", col)
+    return _dual_multiplier(model) * redcost
 end
 
 function MOI.get(
@@ -2497,10 +2498,8 @@ function MOI.get(
     if model.has_dual_certificate
         return model.certificate[row+1]
     end
-    p_value = Ref{Cdouble}()
-    ret = COPT_GetRowInfo(model.prob, "Dual", 1, [row], p_value)
-    _check_ret(model, ret)
-    return _dual_multiplier(model) * p_value[]
+    rowdual = _copt_get_row_info(model, "Dual", row)
+    return _dual_multiplier(model) * rowdual
 end
 
 function MOI.get(
