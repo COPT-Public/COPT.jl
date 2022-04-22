@@ -4,7 +4,7 @@
 
 using Clang.Generators
 
-const COPT_VERSION = "4.0.5"
+const COPT_VERSION = "4.0.6"
 const LIBCOPT_HEADERS = ["/opt/copt40/include/copt.h"]
 
 const GEN_DIR = joinpath(dirname(@__DIR__), "src", "gen$(COPT_VERSION)")
