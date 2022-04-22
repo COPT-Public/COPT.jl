@@ -32,7 +32,7 @@ if isdir(joinpath(@__DIR__, _GEN_DIR))
 else
     error("""
 You have installed version $_COPT_VERSION of COPT, which is not supported
-by COPT.jl. We require COPT version 4.0.5.
+by COPT.jl. We require at least COPT version 4.0.5.
 
 If you have a newer version of COPT installed, changes may need to be made
 to the Julia code. Please open an issue at
