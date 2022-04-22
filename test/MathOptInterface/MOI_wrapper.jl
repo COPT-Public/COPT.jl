@@ -187,8 +187,7 @@ function test_fake_status()
     model = COPT.Optimizer()
     model.ret_optimize = COPT.COPT_RETCODE_MEMORY
     @test MOI.get(model, MOI.TerminationStatus()) == MOI.MEMORY_LIMIT
-    @test MOI.get(model, MOI.RawStatusString()) ==
-          "Memory allocation failure."
+    @test MOI.get(model, MOI.RawStatusString()) == "Memory allocation failure."
     return
 end
 

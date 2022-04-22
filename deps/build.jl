@@ -12,7 +12,7 @@ const _COPT_HOME_ENV = "COPT_HOME"
 
 function write_depsfile(path)
     open(_DEPS_FILE, "w") do f
-        println(f, "const libcopt = \"$(escape_string(path))\"")
+        return println(f, "const libcopt = \"$(escape_string(path))\"")
     end
 end
 
@@ -108,7 +108,8 @@ end
 function try_local_installation()
     # Iterate through a series of places where COPT could be found: either from
     # an environment variable or in a default install location, in that order.
-    for libnames in [check_copt_in_environment_variables(), check_copt_in_default_paths()]
+    for libnames in
+        [check_copt_in_environment_variables(), check_copt_in_default_paths()]
         found_copt_lib = check_copt_in_libnames(libnames)
         if found_copt_lib !== nothing
             write_depsfile(Libdl.dlpath(found_copt_lib))
@@ -117,11 +118,11 @@ function try_local_installation()
         end
     end
 
-    error(get_error_message_if_not_found())
+    return error(get_error_message_if_not_found())
 end
 
 function try_ci_installation()
-    error("CI installation is not supported")
+    return error("CI installation is not supported")
     # CPLEX_VERSION = ENV["CPLEX_VERSION"]
     # url = ENV["SECRET_CPLEX_URL_" * CPLEX_VERSION]
     # local_filename = joinpath(@__DIR__, "libcplex.so")

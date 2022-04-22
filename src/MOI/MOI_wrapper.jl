@@ -82,7 +82,8 @@ end
 
 function _get_error_string(env::Env, ret::Cint)
     buffer = zeros(Cchar, COPT_BUFFSIZE)
-    if COPT_GetRetcodeMsg(ret, pointer(buffer), length(buffer)) == COPT_RETCODE_OK
+    if COPT_GetRetcodeMsg(ret, pointer(buffer), length(buffer)) ==
+       COPT_RETCODE_OK
         return unsafe_string(pointer(buffer))
     end
     return "COPT error $(ret): Unknown error code."
@@ -435,7 +436,14 @@ function _search_param_attr(model::Optimizer, name::AbstractString)
     # Use undocumented COPT function
     # int COPT_SearchParamAttr(copt_prob* prob, const char* name, int* p_type)
     p_type = Ref{Cint}()
-    ret = ccall((:COPT_SearchParamAttr, libcopt), Cint, (Ptr{copt_prob}, Cstring, Ptr{Cint}), model.prob, name, p_type)
+    ret = ccall(
+        (:COPT_SearchParamAttr, libcopt),
+        Cint,
+        (Ptr{copt_prob}, Cstring, Ptr{Cint}),
+        model.prob,
+        name,
+        p_type,
+    )
     _check_ret(model, ret)
     return convert(Int, p_type[])
 end
@@ -685,13 +693,35 @@ function MOI.add_variable(model::Optimizer)
     info = _info(model, index)
     info.index = index
     info.column = length(model.variable_info)
-    ret = COPT_AddCol(model.prob, 0.0, 0, C_NULL, C_NULL, COPT_CONTINUOUS, -Inf, Inf, "")
+    ret = COPT_AddCol(
+        model.prob,
+        0.0,
+        0,
+        C_NULL,
+        C_NULL,
+        COPT_CONTINUOUS,
+        -Inf,
+        Inf,
+        "",
+    )
     _check_ret(model, ret)
     return index
 end
 
 function MOI.add_variables(model::Optimizer, N::Int)
-    ret = COPT_AddCols(model.prob, N, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, fill(-Inf, N), C_NULL, C_NULL)
+    ret = COPT_AddCols(
+        model.prob,
+        N,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        fill(-Inf, N),
+        C_NULL,
+        C_NULL,
+    )
     _check_ret(model, ret)
     indices = Vector{MOI.VariableIndex}(undef, N)
     num_variables = length(model.variable_info)
@@ -1250,11 +1280,21 @@ function _set_bounds(
         end
     end
     if length(lower_columns) > 0
-        ret = COPT_SetColLower(model.prob, length(lower_columns), lower_columns, lower_values)
+        ret = COPT_SetColLower(
+            model.prob,
+            length(lower_columns),
+            lower_columns,
+            lower_values,
+        )
         _check_ret(model, ret)
     end
     if length(upper_columns) > 0
-        ret = COPT_SetColUpper(model.prob, length(upper_columns), upper_columns, upper_values)
+        ret = COPT_SetColUpper(
+            model.prob,
+            length(upper_columns),
+            upper_columns,
+            upper_values,
+        )
         _check_ret(model, ret)
     end
 end
@@ -1289,13 +1329,15 @@ function _set_variable_lower_bound(model, info, value)
     if info.num_soc_constraints == 0
         # No SOC constraints, set directly.
         @assert isnan(info.lower_bound_if_soc)
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], Cdouble[value])
+        ret =
+            COPT_SetColLower(model.prob, 1, Cint[info.column-1], Cdouble[value])
         _check_ret(model, ret)
     elseif value >= 0.0
         # Regardless of whether there are SOC constraints, this is a valid bound
         # for the SOC constraint and should over-ride any previous bounds.
         info.lower_bound_if_soc = NaN
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], Cdouble[value])
+        ret =
+            COPT_SetColLower(model.prob, 1, Cint[info.column-1], Cdouble[value])
         _check_ret(model, ret)
     elseif isnan(info.lower_bound_if_soc)
         # Previously, we had a non-negative lower bound (i.e., it was set in the
@@ -1303,7 +1345,7 @@ function _set_variable_lower_bound(model, info, value)
         # still some SOC constraints, so we cache `value` and set the variable
         # lower bound to `0.0`.
         @assert value < 0.0
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [0.0])
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column-1], [0.0])
         _check_ret(model, ret)
         info.lower_bound_if_soc = value
     else
@@ -1334,7 +1376,7 @@ function _get_variable_lower_bound(model, info)
 end
 
 function _set_variable_upper_bound(model, info, value)
-    ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], Cdouble[value])
+    ret = COPT_SetColUpper(model.prob, 1, Cint[info.column-1], Cdouble[value])
     _check_ret(model, ret)
     return
 end
@@ -1452,21 +1494,22 @@ function MOI.add_constraint(
     ::MOI.ZeroOne,
 )
     info = _info(model, f)
-    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_BINARY])
+    ret =
+        COPT_SetColType(model.prob, 1, Cint[info.column-1], Cchar[COPT_BINARY])
     _check_ret(model, ret)
     # Round bounds to avoid the CPLEX warning:
     #   Warning:  Non-integral bounds for integer variables rounded.
     # See issue https://github.com/jump-dev/CPLEX.jl/issues/311
     if info.bound == _NONE
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [0.0])
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column-1], [0.0])
         _check_ret(model, ret)
-        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [1.0])
+        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column-1], [1.0])
         _check_ret(model, ret)
     elseif info.bound == _GREATER_THAN
-        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [1.0])
+        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column-1], [1.0])
         _check_ret(model, ret)
     elseif info.bound == _LESS_THAN
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [0.0])
+        ret = COPT_SetColLower(model.prob, 1, Cint[info.column-1], [0.0])
         _check_ret(model, ret)
     end
     info.type = COPT_BINARY
@@ -1479,22 +1522,47 @@ function MOI.delete(
 )
     MOI.throw_if_not_valid(model, c)
     info = _info(model, c)
-    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_CONTINUOUS])
+    ret = COPT_SetColType(
+        model.prob,
+        1,
+        Cint[info.column-1],
+        Cchar[COPT_CONTINUOUS],
+    )
     _check_ret(model, ret)
     # When deleting the ZeroOne bound, reset any bounds that were added. If no
     # _NONE, we added '[0, 1]'. If _GREATER_THAN, we added '1]', if _LESS_THAN,
     # we added '[0'. If it is anything else, both bounds were set by the user,
     # so we don't need to worry.
     if info.bound == _NONE
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [-COPT_INFINITY])
+        ret = COPT_SetColLower(
+            model.prob,
+            1,
+            Cint[info.column-1],
+            [-COPT_INFINITY],
+        )
         _check_ret(model, ret)
-        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [+COPT_INFINITY])
+        ret = COPT_SetColUpper(
+            model.prob,
+            1,
+            Cint[info.column-1],
+            [+COPT_INFINITY],
+        )
         _check_ret(model, ret)
     elseif info.bound == _GREATER_THAN
-        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column - 1], [+COPT_INFINITY])
+        ret = COPT_SetColUpper(
+            model.prob,
+            1,
+            Cint[info.column-1],
+            [+COPT_INFINITY],
+        )
         _check_ret(model, ret)
     elseif info.bound == _LESS_THAN
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column - 1], [-COPT_INFINITY])
+        ret = COPT_SetColLower(
+            model.prob,
+            1,
+            Cint[info.column-1],
+            [-COPT_INFINITY],
+        )
         _check_ret(model, ret)
     end
     info.type = COPT_CONTINUOUS
@@ -1517,7 +1585,8 @@ function MOI.add_constraint(
     ::MOI.Integer,
 )
     info = _info(model, f)
-    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_INTEGER])
+    ret =
+        COPT_SetColType(model.prob, 1, Cint[info.column-1], Cchar[COPT_INTEGER])
     _check_ret(model, ret)
     info.type = COPT_INTEGER
     return MOI.ConstraintIndex{MOI.VariableIndex,MOI.Integer}(f.value)
@@ -1529,7 +1598,12 @@ function MOI.delete(
 )
     MOI.throw_if_not_valid(model, c)
     info = _info(model, c)
-    ret = COPT_SetColType(model.prob, 1, Cint[info.column - 1], Cchar[COPT_CONTINUOUS])
+    ret = COPT_SetColType(
+        model.prob,
+        1,
+        Cint[info.column-1],
+        Cchar[COPT_CONTINUOUS],
+    )
     _check_ret(model, ret)
     info.type = COPT_CONTINUOUS
     model.name_to_constraint_index = nothing
@@ -1592,7 +1666,18 @@ function MOI.add_constraint(
         _ConstraintInfo(length(model.affine_constraint_info) + 1, s)
     indices, coefficients = _indices_and_coefficients(model, f)
     sense, rhs = _sense_and_rhs(s)
-    ret = COPT_AddRows(model.prob, 1, Cint[0], Cint[length(indices)], indices, coefficients, Cchar[sense], Cdouble[rhs], C_NULL, C_NULL)
+    ret = COPT_AddRows(
+        model.prob,
+        1,
+        Cint[0],
+        Cint[length(indices)],
+        indices,
+        coefficients,
+        Cchar[sense],
+        Cdouble[rhs],
+        C_NULL,
+        C_NULL,
+    )
     _check_ret(model, ret)
     return MOI.ConstraintIndex{typeof(f),typeof(s)}(model.last_constraint_index)
 end
@@ -1649,7 +1734,18 @@ function MOI.add_constraints(
         model.affine_constraint_info[model.last_constraint_index] =
             _ConstraintInfo(length(model.affine_constraint_info) + 1, si)
     end
-    ret = COPT_AddRows(model.prob, length(f), row_starts, C_NULL, columns, coefficients, senses, rhss, C_NULL, C_NULL)
+    ret = COPT_AddRows(
+        model.prob,
+        length(f),
+        row_starts,
+        C_NULL,
+        columns,
+        coefficients,
+        senses,
+        rhss,
+        C_NULL,
+        C_NULL,
+    )
     _check_ret(model, ret)
     return indices
 end
@@ -1659,7 +1755,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.ScalarAffineFunction{Float64},<:Any},
 )
     row = _info(model, c).row
-    ret = COPT_DelRows(model.prob, 1, Cint[row - 1])
+    ret = COPT_DelRows(model.prob, 1, Cint[row-1])
     _check_ret(model, ret)
     for (key, info) in model.affine_constraint_info
         if info.row > row
@@ -1686,7 +1782,7 @@ function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
         value = -COPT_INFINITY
     end
     ret = COPT_SetRowLower(model.prob, 1, [copt_row], Cdouble[value])
-    _check_ret(model, ret)
+    return _check_ret(model, ret)
 end
 
 function _copt_set_row_upper(model::Optimizer, copt_row::Cint, value)
@@ -1694,7 +1790,7 @@ function _copt_set_row_upper(model::Optimizer, copt_row::Cint, value)
         value = +COPT_INFINITY
     end
     ret = COPT_SetRowUpper(model.prob, 1, [copt_row], Cdouble[value])
-    _check_ret(model, ret)
+    return _check_ret(model, ret)
 end
 
 function MOI.get(
@@ -1737,13 +1833,33 @@ function MOI.get(
 ) where {S}
     row = Cint(_info(model, c).row - 1)
     p_reqsize = Ref{Cint}()
-    ret = COPT_GetRows(model.prob, 1, [row], C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetRows(
+        model.prob,
+        1,
+        [row],
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     rmatbeg = Vector{Cint}(undef, 2)
     rmatind = Vector{Cint}(undef, num_elem)
     rmatval = Vector{Cdouble}(undef, num_elem)
-    ret = COPT_GetRows(model.prob, 1, [row], rmatbeg, C_NULL, rmatind, rmatval, num_elem, C_NULL)
+    ret = COPT_GetRows(
+        model.prob,
+        1,
+        [row],
+        rmatbeg,
+        C_NULL,
+        rmatind,
+        rmatval,
+        num_elem,
+        C_NULL,
+    )
     _check_ret(model, ret)
     terms = MOI.ScalarAffineTerm{Float64}[]
     for i in 1:rmatbeg[2]
@@ -1776,7 +1892,7 @@ function MOI.set(
 )
     info = _info(model, c)
     if model.pass_names && info.name != name && isascii(name)
-        ret = COPT_SetRowNames(model.prob, 1, Cint[info.row - 1], [name])
+        ret = COPT_SetRowNames(model.prob, 1, Cint[info.row-1], [name])
         _check_ret(model, ret)
     end
     info.name = name
@@ -1883,7 +1999,19 @@ Add a linear constraint instead.
         """)
     end
     sense, rhs = _sense_and_rhs(s)
-    ret = COPT_AddQConstr(model.prob, length(indices), indices, coefficients, length(V), I, J, V, sense, rhs, C_NULL)
+    ret = COPT_AddQConstr(
+        model.prob,
+        length(indices),
+        indices,
+        coefficients,
+        length(V),
+        I,
+        J,
+        V,
+        sense,
+        rhs,
+        C_NULL,
+    )
     _check_ret(model, ret)
     model.last_constraint_index += 1
     model.quadratic_constraint_info[model.last_constraint_index] =
@@ -1906,7 +2034,7 @@ function MOI.delete(
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
     info = _info(model, c)
-    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row - 1])
+    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row-1])
     _check_ret(model, ret)
     for (key, info_2) in model.quadratic_constraint_info
         if info_2.row > info.row
@@ -1934,7 +2062,21 @@ function _copt_getqconstr(model::Optimizer, c::MOI.ConstraintIndex)
     row = Cint(_info(model, c).row - 1)
     p_reqsize = Ref{Cint}()
     p_qreqsize = Ref{Cint}()
-    ret = COPT_GetQConstr(model.prob, row, C_NULL, C_NULL, C_NULL, 0, p_qreqsize, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetQConstr(
+        model.prob,
+        row,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_qreqsize,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     num_qelem = p_qreqsize[]
@@ -1943,7 +2085,21 @@ function _copt_getqconstr(model::Optimizer, c::MOI.ConstraintIndex)
     quadrow = Vector{Cint}(undef, num_qelem)
     quadcol = Vector{Cint}(undef, num_qelem)
     quadval = Vector{Cdouble}(undef, num_qelem)
-    ret = COPT_GetQConstr(model.prob, row, quadrow, quadcol, quadval, num_qelem, C_NULL, linind, linval, C_NULL, C_NULL, num_elem, C_NULL)
+    ret = COPT_GetQConstr(
+        model.prob,
+        row,
+        quadrow,
+        quadcol,
+        quadval,
+        num_qelem,
+        C_NULL,
+        linind,
+        linval,
+        C_NULL,
+        C_NULL,
+        num_elem,
+        C_NULL,
+    )
     _check_ret(model, ret)
     return linind, linval, quadrow, quadcol, quadval
 end
@@ -2032,7 +2188,15 @@ end
 
 function MOI.add_constraint(model::Optimizer, f::MOI.VectorOfVariables, s::_SOS)
     columns = Cint[column(model, v) - 1 for v in f.variables]
-    ret = COPT_AddSOSs(model.prob, 1, Cint[_sos_type(s)], Cint[0], Cint[length(columns)], columns, s.weights)
+    ret = COPT_AddSOSs(
+        model.prob,
+        1,
+        Cint[_sos_type(s)],
+        Cint[0],
+        Cint[length(columns)],
+        columns,
+        s.weights,
+    )
     _check_ret(model, ret)
     model.last_constraint_index += 1
     index = MOI.ConstraintIndex{MOI.VectorOfVariables,typeof(s)}(
@@ -2082,7 +2246,18 @@ end
 
 function _copt_getsos(model::Optimizer, copt_row::Cint)
     p_reqsize = Ref{Cint}()
-    ret = COPT_GetSOSs(model.prob, 1, [copt_row], C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetSOSs(
+        model.prob,
+        1,
+        [copt_row],
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     sostype = Vector{Cint}(undef, 1)
@@ -2090,7 +2265,18 @@ function _copt_getsos(model::Optimizer, copt_row::Cint)
     soscnt = Vector{Cint}(undef, 1)
     sosind = Vector{Cint}(undef, num_elem)
     soswt = Vector{Cdouble}(undef, num_elem)
-    ret = COPT_GetSOSs(model.prob, 1, [copt_row], sostype, sosbeg, soscnt, sosind, soswt, num_elem, C_NULL)
+    ret = COPT_GetSOSs(
+        model.prob,
+        1,
+        [copt_row],
+        sostype,
+        sosbeg,
+        soscnt,
+        sosind,
+        soswt,
+        num_elem,
+        C_NULL,
+    )
     _check_ret(model, ret)
     return sosind, soswt
 end
@@ -2131,8 +2317,11 @@ end
 
 function _optimize!(model)
     if _has_discrete_variables(model)
-        if model.objective_type == _SCALAR_QUADRATIC || !isempty(model.quadratic_constraint_info)
-            error("COPT cannot solve QP/QCP/SOCP models with discrete variables")
+        if model.objective_type == _SCALAR_QUADRATIC ||
+           !isempty(model.quadratic_constraint_info)
+            error(
+                "COPT cannot solve QP/QCP/SOCP models with discrete variables",
+            )
         end
         model.ret_optimize = COPT_Solve(model.prob)
         model.solved_as_mip = true
@@ -2155,7 +2344,12 @@ function MOI.optimize!(model::Optimizer)
             end
         end
         if length(varindices) > 0
-            ret = COPT_AddMipStart(model.prob, length(varindices), varindices, values)
+            ret = COPT_AddMipStart(
+                model.prob,
+                length(varindices),
+                varindices,
+                values,
+            )
             _check_ret(model, ret)
         end
     end
@@ -2180,35 +2374,73 @@ function MOI.optimize!(model::Optimizer)
     return
 end
 
-function _throw_if_optimize_in_progress(model, attr)
-end
+function _throw_if_optimize_in_progress(model, attr) end
 
 # LP status codes. Descriptions taken from COPT user guide.
-const _RAW_LPSTATUS_STRINGS = Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
-    # Code => (TerminationStatus, RawStatusString)
-    COPT_LPSTATUS_UNSTARTED => (MOI.OPTIMIZE_NOT_CALLED, "The LP optimization is not started yet."),
-    COPT_LPSTATUS_OPTIMAL => (MOI.OPTIMAL, "The LP problem is solved to optimality."),
-    COPT_LPSTATUS_INFEASIBLE => (MOI.INFEASIBLE, "The LP problem is infeasible."),
-    COPT_LPSTATUS_UNBOUNDED => (MOI.DUAL_INFEASIBLE, "The LP problem is unbounded."),
-    COPT_LPSTATUS_NUMERICAL => (MOI.NUMERICAL_ERROR, "Numerical trouble encountered."),
-    COPT_LPSTATUS_TIMEOUT => (MOI.TIME_LIMIT, "The LP optimization is stopped because of time limit."),
-    COPT_LPSTATUS_UNFINISHED => (MOI.NUMERICAL_ERROR, "The LP optimization is stopped but the solver cannot provide a solution because of numerical difficulties."),
-    COPT_LPSTATUS_INTERRUPTED => (MOI.INTERRUPTED, "The LP optimization is stopped by user interrupt."),
-])
+const _RAW_LPSTATUS_STRINGS =
+    Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
+        # Code => (TerminationStatus, RawStatusString)
+        COPT_LPSTATUS_UNSTARTED => (
+            MOI.OPTIMIZE_NOT_CALLED,
+            "The LP optimization is not started yet.",
+        ),
+        COPT_LPSTATUS_OPTIMAL =>
+            (MOI.OPTIMAL, "The LP problem is solved to optimality."),
+        COPT_LPSTATUS_INFEASIBLE =>
+            (MOI.INFEASIBLE, "The LP problem is infeasible."),
+        COPT_LPSTATUS_UNBOUNDED =>
+            (MOI.DUAL_INFEASIBLE, "The LP problem is unbounded."),
+        COPT_LPSTATUS_NUMERICAL =>
+            (MOI.NUMERICAL_ERROR, "Numerical trouble encountered."),
+        COPT_LPSTATUS_TIMEOUT => (
+            MOI.TIME_LIMIT,
+            "The LP optimization is stopped because of time limit.",
+        ),
+        COPT_LPSTATUS_UNFINISHED => (
+            MOI.NUMERICAL_ERROR,
+            "The LP optimization is stopped but the solver cannot provide a solution because of numerical difficulties.",
+        ),
+        COPT_LPSTATUS_INTERRUPTED => (
+            MOI.INTERRUPTED,
+            "The LP optimization is stopped by user interrupt.",
+        ),
+    ])
 
 # MIP status codes. Descriptions taken from COPT user guide.
-const _RAW_MIPSTATUS_STRINGS = Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
-    # Code => (TerminationStatus, RawStatusString)
-    COPT_MIPSTATUS_UNSTARTED => (MOI.OPTIMIZE_NOT_CALLED, "The MIP optimization is not started yet."),
-    COPT_MIPSTATUS_OPTIMAL => (MOI.OPTIMAL, "The MIP problem is solved to optimality."),
-    COPT_MIPSTATUS_INFEASIBLE => (MOI.INFEASIBLE, "The MIP problem is infeasible."),
-    COPT_MIPSTATUS_UNBOUNDED => (MOI.DUAL_INFEASIBLE, "The MIP problem is unbounded."),
-    COPT_MIPSTATUS_INF_OR_UNB => (MOI.INFEASIBLE_OR_UNBOUNDED, "The MIP problem is infeasible or unbounded."),
-    COPT_MIPSTATUS_NODELIMIT => (MOI.NODE_LIMIT, "The MIP optimization is stopped because of node limit."),
-    COPT_MIPSTATUS_TIMEOUT => (MOI.TIME_LIMIT, "The MIP optimization is stopped because of time limit."),
-    COPT_MIPSTATUS_UNFINISHED => (MOI.NUMERICAL_ERROR, "The MIP optimization is stopped but the solver cannot provide a solution because of numerical difficulties."),
-    COPT_MIPSTATUS_INTERRUPTED => (MOI.INTERRUPTED, "The MIP optimization is stopped by user interrupt."),
-])
+const _RAW_MIPSTATUS_STRINGS =
+    Dict{Cint,Tuple{MOI.TerminationStatusCode,String}}([
+        # Code => (TerminationStatus, RawStatusString)
+        COPT_MIPSTATUS_UNSTARTED => (
+            MOI.OPTIMIZE_NOT_CALLED,
+            "The MIP optimization is not started yet.",
+        ),
+        COPT_MIPSTATUS_OPTIMAL =>
+            (MOI.OPTIMAL, "The MIP problem is solved to optimality."),
+        COPT_MIPSTATUS_INFEASIBLE =>
+            (MOI.INFEASIBLE, "The MIP problem is infeasible."),
+        COPT_MIPSTATUS_UNBOUNDED =>
+            (MOI.DUAL_INFEASIBLE, "The MIP problem is unbounded."),
+        COPT_MIPSTATUS_INF_OR_UNB => (
+            MOI.INFEASIBLE_OR_UNBOUNDED,
+            "The MIP problem is infeasible or unbounded.",
+        ),
+        COPT_MIPSTATUS_NODELIMIT => (
+            MOI.NODE_LIMIT,
+            "The MIP optimization is stopped because of node limit.",
+        ),
+        COPT_MIPSTATUS_TIMEOUT => (
+            MOI.TIME_LIMIT,
+            "The MIP optimization is stopped because of time limit.",
+        ),
+        COPT_MIPSTATUS_UNFINISHED => (
+            MOI.NUMERICAL_ERROR,
+            "The MIP optimization is stopped but the solver cannot provide a solution because of numerical difficulties.",
+        ),
+        COPT_MIPSTATUS_INTERRUPTED => (
+            MOI.INTERRUPTED,
+            "The MIP optimization is stopped by user interrupt.",
+        ),
+    ])
 
 function _raw_lpstatus(model::Optimizer)
     if haskey(_ERROR_TO_STATUS, model.ret_optimize)
@@ -2218,12 +2450,14 @@ function _raw_lpstatus(model::Optimizer)
     if haskey(_RAW_LPSTATUS_STRINGS, status)
         return _RAW_LPSTATUS_STRINGS[status]
     end
-    error("""
+    return error(
+        """
 LP termination status $(status) is not wrapped by COPT.jl.
 
 Please open an issue at https://github.com/COPT-Public/COPT.jl/issues and
 provide the complete text of this error message.
-    """)
+    """,
+    )
 end
 
 function _raw_mipstatus(model::Optimizer)
@@ -2234,12 +2468,14 @@ function _raw_mipstatus(model::Optimizer)
     if haskey(_RAW_MIPSTATUS_STRINGS, status)
         return _RAW_MIPSTATUS_STRINGS[status]
     end
-    error("""
+    return error(
+        """
 MIP termination status $(status) is not wrapped by COPT.jl.
 
 Please open an issue at https://github.com/COPT-Public/COPT.jl/issues and
 provide the complete text of this error message.
-    """)
+    """,
+    )
 end
 
 function MOI.get(model::Optimizer, attr::MOI.RawStatusString)
@@ -2328,14 +2564,34 @@ end
 
 function _copt_get_row(model::Optimizer, copt_row::Cint)
     p_reqsize = Ref{Cint}()
-    ret = COPT_GetRows(model.prob, 1, [copt_row], C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetRows(
+        model.prob,
+        1,
+        [copt_row],
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     rowbeg = Array{Cint}(undef, 1)
     rowcnt = Array{Cint}(undef, 1)
     columns = Array{Cint}(undef, num_elem)
     coefficients = Array{Cdouble}(undef, num_elem)
-    ret = COPT_GetRows(model.prob, 1, [copt_row], rowbeg, rowcnt, columns, coefficients, num_elem, p_reqsize)
+    ret = COPT_GetRows(
+        model.prob,
+        1,
+        [copt_row],
+        rowbeg,
+        rowcnt,
+        columns,
+        coefficients,
+        num_elem,
+        p_reqsize,
+    )
     _check_ret(model, ret)
     return columns, coefficients
 end
@@ -2394,13 +2650,33 @@ and it applies to the lower bound if ā > 0.
 """
 function _farkas_variable_dual(model::Optimizer, col::Cint)
     p_reqsize = Ref{Cint}()
-    ret = COPT_GetCols(model.prob, 1, [col], C_NULL, C_NULL, C_NULL, C_NULL, 0, p_reqsize)
+    ret = COPT_GetCols(
+        model.prob,
+        1,
+        [col],
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
     _check_ret(model, ret)
     num_elem = p_reqsize[]
     cmatbeg = Vector{Cint}(undef, 2)
     cmatind = Vector{Cint}(undef, num_elem)
     cmatval = Vector{Cdouble}(undef, num_elem)
-    ret = COPT_GetCols(model.prob, 1, [col], cmatbeg, C_NULL, cmatind, cmatval, num_elem, C_NULL)
+    ret = COPT_GetCols(
+        model.prob,
+        1,
+        [col],
+        cmatbeg,
+        C_NULL,
+        cmatind,
+        cmatval,
+        num_elem,
+        C_NULL,
+    )
     _check_ret(model, ret)
     return sum(v * model.certificate[i+1] for (i, v) in zip(cmatind, cmatval))
 end
@@ -2582,12 +2858,18 @@ end
 function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
-    return _copt_get_dbl_attr(model, model.solved_as_mip ? "BestObj" : "LpObjval")
+    return _copt_get_dbl_attr(
+        model,
+        model.solved_as_mip ? "BestObj" : "LpObjval",
+    )
 end
 
 function MOI.get(model::Optimizer, attr::MOI.ObjectiveBound)
     _throw_if_optimize_in_progress(model, attr)
-    return _copt_get_dbl_attr(model, model.solved_as_mip ? "BestBnd" : "LpObjval")
+    return _copt_get_dbl_attr(
+        model,
+        model.solved_as_mip ? "BestBnd" : "LpObjval",
+    )
 end
 
 function MOI.get(model::Optimizer, attr::MOI.SolveTimeSec)
@@ -2618,7 +2900,10 @@ end
 function MOI.get(model::Optimizer, attr::MOI.DualObjectiveValue)
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
-    return _copt_get_dbl_attr(model, model.solved_as_mip ? "BestBnd" : "LpObjval")
+    return _copt_get_dbl_attr(
+        model,
+        model.solved_as_mip ? "BestBnd" : "LpObjval",
+    )
 end
 
 function MOI.get(model::Optimizer, attr::MOI.ResultCount)
@@ -2655,7 +2940,7 @@ end
 MOI.get(model::Optimizer, ::MOI.Name) = model.name
 
 function MOI.set(model::Optimizer, ::MOI.Name, name::String)
-    model.name = name
+    return model.name = name
 end
 
 MOI.get(model::Optimizer, ::MOI.NumberOfVariables) = length(model.variable_info)
@@ -2888,7 +3173,8 @@ function _replace_with_matching_sparsity!(
 )
     for term in replacement.terms
         col = Cint(column(model, term.variable) - 1)
-        ret = COPT_SetElem(model.prob, col, Cint(row - 1), MOI.coefficient(term))
+        ret =
+            COPT_SetElem(model.prob, col, Cint(row - 1), MOI.coefficient(term))
         _check_ret(model, ret)
     end
     return
@@ -2928,7 +3214,8 @@ function _replace_with_different_sparsity!(
     # Next, set the new constraint function terms.
     for term in previous.terms
         col = Cint(column(model, term.variable) - 1)
-        ret = COPT_SetElem(model.prob, col, Cint(row - 1), MOI.coefficient(term))
+        ret =
+            COPT_SetElem(model.prob, col, Cint(row - 1), MOI.coefficient(term))
         _check_ret(model, ret)
     end
     return
@@ -2982,13 +3269,17 @@ function MOI.set(
         _replace_with_different_sparsity!(model, previous, replacement, row)
     end
     # Change right-hand side.
-    if S <: MOI.GreaterThan{Float64} || S <: MOI.EqualTo{Float64} || S <: MOI.Interval{Float64}
+    if S <: MOI.GreaterThan{Float64} ||
+       S <: MOI.EqualTo{Float64} ||
+       S <: MOI.Interval{Float64}
         lower = _copt_get_row_lower(model, Cint(row - 1))
         @assert isfinite(lower)
         lower -= replacement.constant - previous.constant
         _copt_set_row_lower(model, Cint(row - 1), lower)
     end
-    if S <: MOI.LessThan{Float64} || S <: MOI.EqualTo{Float64} || S <: MOI.Interval{Float64}
+    if S <: MOI.LessThan{Float64} ||
+       S <: MOI.EqualTo{Float64} ||
+       S <: MOI.Interval{Float64}
         upper = _copt_get_row_upper(model, Cint(row - 1))
         @assert isfinite(upper)
         upper -= replacement.constant - previous.constant
@@ -3068,7 +3359,7 @@ function MOI.add_constraint(
     lb = _get_variable_lower_bound(model, t_info)
     if isnan(t_info.lower_bound_if_soc) && lb < 0.0
         t_info.lower_bound_if_soc = lb
-        ret = COPT_SetColLower(model.prob, 1, Cint[t_info.column - 1], [0.0])
+        ret = COPT_SetColLower(model.prob, 1, Cint[t_info.column-1], [0.0])
         _check_ret(model, ret)
     end
     t_info.num_soc_constraints += 1
@@ -3078,7 +3369,19 @@ function MOI.add_constraint(
     I = Cint[column(model, v) - 1 for v in f.variables]
     V = fill(-1.0, length(f.variables))
     V[1] = 1.0
-    ret = COPT_AddQConstr(model.prob, 0, C_NULL, C_NULL, length(V), I, I, V, COPT_GREATER_EQUAL, 0.0, C_NULL)
+    ret = COPT_AddQConstr(
+        model.prob,
+        0,
+        C_NULL,
+        C_NULL,
+        length(V),
+        I,
+        I,
+        V,
+        COPT_GREATER_EQUAL,
+        0.0,
+        C_NULL,
+    )
     _check_ret(model, ret)
     model.last_constraint_index += 1
     model.quadratic_constraint_info[model.last_constraint_index] =
@@ -3102,7 +3405,7 @@ function MOI.delete(
 )
     f = MOI.get(model, MOI.ConstraintFunction(), c)
     info = _info(model, c)
-    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row - 1])
+    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row-1])
     _check_ret(model, ret)
     for (key, info_2) in model.quadratic_constraint_info
         if info_2.row > info.row
