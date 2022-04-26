@@ -1663,17 +1663,6 @@ function MOI.add_constraint(
     ret =
         COPT_SetColType(model.prob, 1, Cint[info.column-1], Cchar[COPT_BINARY])
     _check_ret(model, ret)
-    # Round bounds to avoid the CPLEX warning:
-    #   Warning:  Non-integral bounds for integer variables rounded.
-    # See issue https://github.com/jump-dev/CPLEX.jl/issues/311
-    if info.bound == _NONE
-        _copt_set_col_lower(model, Cint(info.column - 1), 0.0)
-        _copt_set_col_upper(model, Cint(info.column - 1), 1.0)
-    elseif info.bound == _GREATER_THAN
-        _copt_set_col_upper(model, Cint(info.column - 1), 1.0)
-    elseif info.bound == _LESS_THAN
-        _copt_set_col_lower(model, Cint(info.column - 1), 0.0)
-    end
     info.type = COPT_BINARY
     return MOI.ConstraintIndex{MOI.VariableIndex,MOI.ZeroOne}(f.value)
 end
@@ -1691,18 +1680,6 @@ function MOI.delete(
         Cchar[COPT_CONTINUOUS],
     )
     _check_ret(model, ret)
-    # When deleting the ZeroOne bound, reset any bounds that were added. If no
-    # _NONE, we added '[0, 1]'. If _GREATER_THAN, we added '1]', if _LESS_THAN,
-    # we added '[0'. If it is anything else, both bounds were set by the user,
-    # so we don't need to worry.
-    if info.bound == _NONE
-        _copt_set_col_lower(model, Cint(info.column - 1), -Inf)
-        _copt_set_col_upper(model, Cint(info.column - 1), Inf)
-    elseif info.bound == _GREATER_THAN
-        _copt_set_col_upper(model, Cint(info.column - 1), Inf)
-    elseif info.bound == _LESS_THAN
-        _copt_set_col_lower(model, Cint(info.column - 1), -Inf)
-    end
     info.type = COPT_CONTINUOUS
     model.name_to_constraint_index = nothing
     return
