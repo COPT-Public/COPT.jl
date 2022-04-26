@@ -2223,6 +2223,224 @@ function MOI.set(
 end
 
 ###
+### VectorOfVariables-in-SecondOrderCone
+###
+
+function _info(
+    model::Optimizer,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    if haskey(model.quadratic_constraint_info, c.value)
+        return model.quadratic_constraint_info[c.value]
+    end
+    return throw(MOI.InvalidIndex(c))
+end
+
+function MOI.add_constraint(
+    model::Optimizer,
+    f::MOI.VectorOfVariables,
+    s::MOI.SecondOrderCone,
+)
+    if length(f.variables) != s.dimension
+        error("Dimension of $(s) does not match number of terms in $(f)")
+    end
+
+    # SOC is the cone: t ≥ ||x||₂ ≥ 0. In quadratic form, this is
+    # t² - Σᵢ xᵢ² ≥ 0 and t ≥ 0.
+
+    # First, check the lower bound on t.
+
+    t_info = _info(model, f.variables[1])
+    lb = _get_variable_lower_bound(model, t_info)
+    if isnan(t_info.lower_bound_if_soc) && lb < 0.0
+        t_info.lower_bound_if_soc = lb
+        _copt_set_col_lower(model, Cint(t_info.column - 1), 0.0)
+    end
+    t_info.num_soc_constraints += 1
+
+    # Now add the quadratic constraint.
+
+    I = Cint[column(model, v) - 1 for v in f.variables]
+    V = fill(-1.0, length(f.variables))
+    V[1] = 1.0
+    ret = COPT_AddQConstr(
+        model.prob,
+        0,
+        C_NULL,
+        C_NULL,
+        length(V),
+        I,
+        I,
+        V,
+        COPT_GREATER_EQUAL,
+        0.0,
+        C_NULL,
+    )
+    _check_ret(model, ret)
+    model.last_constraint_index += 1
+    model.quadratic_constraint_info[model.last_constraint_index] =
+        _ConstraintInfo(length(model.quadratic_constraint_info) + 1, s)
+    return MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone}(
+        model.last_constraint_index,
+    )
+end
+
+function MOI.is_valid(
+    model::Optimizer,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    info = get(model.quadratic_constraint_info, c.value, nothing)
+    return info !== nothing && typeof(info.set) == MOI.SecondOrderCone
+end
+
+function MOI.delete(
+    model::Optimizer,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    f = MOI.get(model, MOI.ConstraintFunction(), c)
+    info = _info(model, c)
+    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row-1])
+    _check_ret(model, ret)
+    for (key, info_2) in model.quadratic_constraint_info
+        if info_2.row > info.row
+            info_2.row -= 1
+        end
+    end
+    model.name_to_constraint_index = nothing
+    delete!(model.quadratic_constraint_info, c.value)
+    # Reset the lower bound on the `t` variable.
+    t_info = _info(model, f.variables[1])
+    t_info.num_soc_constraints -= 1
+    if t_info.num_soc_constraints > 0
+        # Don't do anything. There are still SOC associated with this variable.
+        return
+    elseif isnan(t_info.lower_bound_if_soc)
+        # Don't do anything. It must have a >0 lower bound anyway.
+        return
+    end
+    # There was a previous bound that we over-wrote, and it must have been
+    # < 0 otherwise we wouldn't have needed to overwrite it.
+    @assert t_info.lower_bound_if_soc < 0.0
+    tmp_lower_bound = t_info.lower_bound_if_soc
+    t_info.lower_bound_if_soc = NaN
+    _set_variable_lower_bound(model, t_info, tmp_lower_bound)
+    return
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintSet,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    return _info(model, c).set
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintFunction,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    copt_row = Cint(_info(model, c).row - 1)
+    a, b, I, J, V = _copt_getqconstr(model, copt_row)
+    @assert length(a) == length(b) == 0  # Check for no linear terms.
+    t = nothing
+    x = MOI.VariableIndex[]
+    for (i, j, coef) in zip(I, J, V)
+        v = model.variable_info[CleverDicts.LinearIndex(i + 1)].index
+        @assert i == j  # Check for no off-diagonals.
+        if coef == 1.0
+            @assert t === nothing  # There should only be one `t`.
+            t = v
+        else
+            @assert coef == -1.0  # The coefficients _must_ be -1 for `x` terms.
+            push!(x, v)
+        end
+    end
+    @assert t !== nothing  # Check that we found a `t` variable.
+    return MOI.VectorOfVariables([t; x])
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintPrimal,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    f = MOI.get(model, MOI.ConstraintFunction(), c)
+    return MOI.get(model, MOI.VariablePrimal(), f.variables)
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintName,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    return _info(model, c).name
+end
+
+function MOI.set(
+    model::Optimizer,
+    ::MOI.ConstraintName,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+    name::String,
+)
+    info = _info(model, c)
+    if !isempty(info.name) && model.name_to_constraint_index !== nothing
+        delete!(model.name_to_constraint_index, info.name)
+    end
+    info.name = name
+    if model.name_to_constraint_index === nothing || isempty(name)
+        return
+    end
+    if haskey(model.name_to_constraint_index, name)
+        model.name_to_constraint_index = nothing
+    else
+        model.name_to_constraint_index[c] = name
+    end
+    return
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintDual,
+    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
+)
+    f = MOI.get(model, MOI.ConstraintFunction(), c)
+    # From CPLEX.jl:
+    # qind = Cint(_info(model, c).row - 1)
+    # surplus_p = Ref{Cint}()
+    # CPXgetqconstrdslack(
+    #     model.env,
+    #     model.lp,
+    #     qind,
+    #     C_NULL,
+    #     C_NULL,
+    #     C_NULL,
+    #     0,
+    #     surplus_p,
+    # )
+    # ind = Vector{Cint}(undef, -surplus_p[])
+    # val = Vector{Cdouble}(undef, -surplus_p[])
+    # ret = CPXgetqconstrdslack(
+    #     model.env,
+    #     model.lp,
+    #     qind,
+    #     C_NULL,
+    #     ind,
+    #     val,
+    #     -surplus_p[],
+    #     surplus_p,
+    # )
+    # _check_ret(model, ret)
+    error("COPT does not provide a dual solution for quadratic constraints.")
+    slack = zeros(length(model.variable_info))
+    for (i, v) in zip(ind, val)
+        slack[i+1] += v
+    end
+    z = _dual_multiplier(model)
+    return [z * slack[_info(model, v).column] for v in f.variables]
+end
+
+###
 ### VectorOfVariables-in-SOS{I|II}
 ###
 
@@ -3322,222 +3540,4 @@ function MOI.get(
         @assert vbasis == COPT_BASIS_FIXED
         return MOI.NONBASIC
     end
-end
-
-###
-### VectorOfVariables-in-SecondOrderCone
-###
-
-function _info(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    if haskey(model.quadratic_constraint_info, c.value)
-        return model.quadratic_constraint_info[c.value]
-    end
-    return throw(MOI.InvalidIndex(c))
-end
-
-function MOI.add_constraint(
-    model::Optimizer,
-    f::MOI.VectorOfVariables,
-    s::MOI.SecondOrderCone,
-)
-    if length(f.variables) != s.dimension
-        error("Dimension of $(s) does not match number of terms in $(f)")
-    end
-
-    # SOC is the cone: t ≥ ||x||₂ ≥ 0. In quadratic form, this is
-    # t² - Σᵢ xᵢ² ≥ 0 and t ≥ 0.
-
-    # First, check the lower bound on t.
-
-    t_info = _info(model, f.variables[1])
-    lb = _get_variable_lower_bound(model, t_info)
-    if isnan(t_info.lower_bound_if_soc) && lb < 0.0
-        t_info.lower_bound_if_soc = lb
-        _copt_set_col_lower(model, Cint(t_info.column - 1), 0.0)
-    end
-    t_info.num_soc_constraints += 1
-
-    # Now add the quadratic constraint.
-
-    I = Cint[column(model, v) - 1 for v in f.variables]
-    V = fill(-1.0, length(f.variables))
-    V[1] = 1.0
-    ret = COPT_AddQConstr(
-        model.prob,
-        0,
-        C_NULL,
-        C_NULL,
-        length(V),
-        I,
-        I,
-        V,
-        COPT_GREATER_EQUAL,
-        0.0,
-        C_NULL,
-    )
-    _check_ret(model, ret)
-    model.last_constraint_index += 1
-    model.quadratic_constraint_info[model.last_constraint_index] =
-        _ConstraintInfo(length(model.quadratic_constraint_info) + 1, s)
-    return MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone}(
-        model.last_constraint_index,
-    )
-end
-
-function MOI.is_valid(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    info = get(model.quadratic_constraint_info, c.value, nothing)
-    return info !== nothing && typeof(info.set) == MOI.SecondOrderCone
-end
-
-function MOI.delete(
-    model::Optimizer,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    f = MOI.get(model, MOI.ConstraintFunction(), c)
-    info = _info(model, c)
-    ret = COPT_DelQConstrs(model.prob, 1, Cint[info.row-1])
-    _check_ret(model, ret)
-    for (key, info_2) in model.quadratic_constraint_info
-        if info_2.row > info.row
-            info_2.row -= 1
-        end
-    end
-    model.name_to_constraint_index = nothing
-    delete!(model.quadratic_constraint_info, c.value)
-    # Reset the lower bound on the `t` variable.
-    t_info = _info(model, f.variables[1])
-    t_info.num_soc_constraints -= 1
-    if t_info.num_soc_constraints > 0
-        # Don't do anything. There are still SOC associated with this variable.
-        return
-    elseif isnan(t_info.lower_bound_if_soc)
-        # Don't do anything. It must have a >0 lower bound anyway.
-        return
-    end
-    # There was a previous bound that we over-wrote, and it must have been
-    # < 0 otherwise we wouldn't have needed to overwrite it.
-    @assert t_info.lower_bound_if_soc < 0.0
-    tmp_lower_bound = t_info.lower_bound_if_soc
-    t_info.lower_bound_if_soc = NaN
-    _set_variable_lower_bound(model, t_info, tmp_lower_bound)
-    return
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintSet,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    return _info(model, c).set
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintFunction,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    copt_row = Cint(_info(model, c).row - 1)
-    a, b, I, J, V = _copt_getqconstr(model, copt_row)
-    @assert length(a) == length(b) == 0  # Check for no linear terms.
-    t = nothing
-    x = MOI.VariableIndex[]
-    for (i, j, coef) in zip(I, J, V)
-        v = model.variable_info[CleverDicts.LinearIndex(i + 1)].index
-        @assert i == j  # Check for no off-diagonals.
-        if coef == 1.0
-            @assert t === nothing  # There should only be one `t`.
-            t = v
-        else
-            @assert coef == -1.0  # The coefficients _must_ be -1 for `x` terms.
-            push!(x, v)
-        end
-    end
-    @assert t !== nothing  # Check that we found a `t` variable.
-    return MOI.VectorOfVariables([t; x])
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintPrimal,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    f = MOI.get(model, MOI.ConstraintFunction(), c)
-    return MOI.get(model, MOI.VariablePrimal(), f.variables)
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintName,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    return _info(model, c).name
-end
-
-function MOI.set(
-    model::Optimizer,
-    ::MOI.ConstraintName,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-    name::String,
-)
-    info = _info(model, c)
-    if !isempty(info.name) && model.name_to_constraint_index !== nothing
-        delete!(model.name_to_constraint_index, info.name)
-    end
-    info.name = name
-    if model.name_to_constraint_index === nothing || isempty(name)
-        return
-    end
-    if haskey(model.name_to_constraint_index, name)
-        model.name_to_constraint_index = nothing
-    else
-        model.name_to_constraint_index[c] = name
-    end
-    return
-end
-
-function MOI.get(
-    model::Optimizer,
-    ::MOI.ConstraintDual,
-    c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
-)
-    f = MOI.get(model, MOI.ConstraintFunction(), c)
-    # From CPLEX.jl:
-    # qind = Cint(_info(model, c).row - 1)
-    # surplus_p = Ref{Cint}()
-    # CPXgetqconstrdslack(
-    #     model.env,
-    #     model.lp,
-    #     qind,
-    #     C_NULL,
-    #     C_NULL,
-    #     C_NULL,
-    #     0,
-    #     surplus_p,
-    # )
-    # ind = Vector{Cint}(undef, -surplus_p[])
-    # val = Vector{Cdouble}(undef, -surplus_p[])
-    # ret = CPXgetqconstrdslack(
-    #     model.env,
-    #     model.lp,
-    #     qind,
-    #     C_NULL,
-    #     ind,
-    #     val,
-    #     -surplus_p[],
-    #     surplus_p,
-    # )
-    # _check_ret(model, ret)
-    error("COPT does not provide a dual solution for quadratic constraints.")
-    slack = zeros(length(model.variable_info))
-    for (i, v) in zip(ind, val)
-        slack[i+1] += v
-    end
-    z = _dual_multiplier(model)
-    return [z * slack[_info(model, v).column] for v in f.variables]
 end
