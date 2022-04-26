@@ -1,0 +1,14 @@
+# Updating COPT.jl to a new COPT version
+
+## Updating to a new technical version
+
+When only the technical version number changes (e.g. from 4.0.5 to 4.0.6), then
+only the low-level wrapper needs to be generated for the new version. In
+scripts/generator.jl adapt COPT_VERSION and COPT_HEADERS, and include the file
+into a Julia session. This will create a directory src/genX.Y.Z.
+
+## Updating to a new major or minor version
+
+When the major or minor version number changes, then in addition to generating
+the low-level wrapper, you also need to adjust the installer. In deps/build.jl
+search for the old version number (e.g. "40" and "4.0") and add the new one.
