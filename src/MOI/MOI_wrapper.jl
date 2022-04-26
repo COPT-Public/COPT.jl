@@ -490,6 +490,148 @@ function _copt_get_row_info(model::Optimizer, name::String, copt_row)
     return p_value[]
 end
 
+function _copt_get_row_lower(model::Optimizer, copt_row::Cint)
+    lb = _copt_get_row_info(model, "LB", copt_row)
+    return lb == -COPT_INFINITY ? -Inf : lb
+end
+
+function _copt_get_row_upper(model::Optimizer, copt_row::Cint)
+    ub = _copt_get_row_info(model, "UB", copt_row)
+    return ub == COPT_INFINITY ? Inf : ub
+end
+
+function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
+    if value == -Inf
+        value = -COPT_INFINITY
+    end
+    ret = COPT_SetRowLower(model.prob, 1, [copt_row], Cdouble[value])
+    return _check_ret(model, ret)
+end
+
+function _copt_set_row_upper(model::Optimizer, copt_row::Cint, value)
+    if value == +Inf
+        value = +COPT_INFINITY
+    end
+    ret = COPT_SetRowUpper(model.prob, 1, [copt_row], Cdouble[value])
+    return _check_ret(model, ret)
+end
+
+function _copt_get_row(model::Optimizer, copt_row::Cint)
+    p_reqsize = Ref{Cint}()
+    ret = COPT_GetRows(
+        model.prob,
+        1,
+        [copt_row],
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
+    rowbeg = Array{Cint}(undef, 1)
+    rowcnt = Array{Cint}(undef, 1)
+    columns = Array{Cint}(undef, num_elem)
+    coefficients = Array{Cdouble}(undef, num_elem)
+    ret = COPT_GetRows(
+        model.prob,
+        1,
+        [copt_row],
+        rowbeg,
+        rowcnt,
+        columns,
+        coefficients,
+        num_elem,
+        p_reqsize,
+    )
+    _check_ret(model, ret)
+    return columns, coefficients
+end
+
+function _copt_getqconstr(model::Optimizer, copt_row::Cint)
+    p_reqsize = Ref{Cint}()
+    p_qreqsize = Ref{Cint}()
+    ret = COPT_GetQConstr(
+        model.prob,
+        copt_row,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_qreqsize,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
+    num_qelem = p_qreqsize[]
+    linind = Vector{Cint}(undef, num_elem)
+    linval = Vector{Cdouble}(undef, num_elem)
+    quadrow = Vector{Cint}(undef, num_qelem)
+    quadcol = Vector{Cint}(undef, num_qelem)
+    quadval = Vector{Cdouble}(undef, num_qelem)
+    ret = COPT_GetQConstr(
+        model.prob,
+        copt_row,
+        quadrow,
+        quadcol,
+        quadval,
+        num_qelem,
+        C_NULL,
+        linind,
+        linval,
+        C_NULL,
+        C_NULL,
+        num_elem,
+        C_NULL,
+    )
+    _check_ret(model, ret)
+    return linind, linval, quadrow, quadcol, quadval
+end
+
+function _copt_getsos(model::Optimizer, copt_row::Cint)
+    p_reqsize = Ref{Cint}()
+    ret = COPT_GetSOSs(
+        model.prob,
+        1,
+        [copt_row],
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        0,
+        p_reqsize,
+    )
+    _check_ret(model, ret)
+    num_elem = p_reqsize[]
+    sostype = Vector{Cint}(undef, 1)
+    sosbeg = Vector{Cint}(undef, 1)
+    soscnt = Vector{Cint}(undef, 1)
+    sosind = Vector{Cint}(undef, num_elem)
+    soswt = Vector{Cdouble}(undef, num_elem)
+    ret = COPT_GetSOSs(
+        model.prob,
+        1,
+        [copt_row],
+        sostype,
+        sosbeg,
+        soscnt,
+        sosind,
+        soswt,
+        num_elem,
+        C_NULL,
+    )
+    _check_ret(model, ret)
+    return sosind, soswt
+end
+
 function MOI.set(model::Optimizer, param::MOI.RawOptimizerAttribute, value)
     param_type = _search_param_attr(model, param.name)
     if param_type == 0
@@ -1773,32 +1915,6 @@ function MOI.delete(
     return
 end
 
-function _copt_get_row_lower(model::Optimizer, copt_row::Cint)
-    lb = _copt_get_row_info(model, "LB", copt_row)
-    return lb == -COPT_INFINITY ? -Inf : lb
-end
-
-function _copt_get_row_upper(model::Optimizer, copt_row::Cint)
-    ub = _copt_get_row_info(model, "UB", copt_row)
-    return ub == COPT_INFINITY ? Inf : ub
-end
-
-function _copt_set_row_lower(model::Optimizer, copt_row::Cint, value)
-    if value == -Inf
-        value = -COPT_INFINITY
-    end
-    ret = COPT_SetRowLower(model.prob, 1, [copt_row], Cdouble[value])
-    return _check_ret(model, ret)
-end
-
-function _copt_set_row_upper(model::Optimizer, copt_row::Cint, value)
-    if value == +Inf
-        value = +COPT_INFINITY
-    end
-    ret = COPT_SetRowUpper(model.prob, 1, [copt_row], Cdouble[value])
-    return _check_ret(model, ret)
-end
-
 function MOI.get(
     model::Optimizer,
     ::MOI.ConstraintSet,
@@ -2064,58 +2180,13 @@ function MOI.get(
     return S(p_rhs[])
 end
 
-function _copt_getqconstr(model::Optimizer, c::MOI.ConstraintIndex)
-    row = Cint(_info(model, c).row - 1)
-    p_reqsize = Ref{Cint}()
-    p_qreqsize = Ref{Cint}()
-    ret = COPT_GetQConstr(
-        model.prob,
-        row,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        p_qreqsize,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        p_reqsize,
-    )
-    _check_ret(model, ret)
-    num_elem = p_reqsize[]
-    num_qelem = p_qreqsize[]
-    linind = Vector{Cint}(undef, num_elem)
-    linval = Vector{Cdouble}(undef, num_elem)
-    quadrow = Vector{Cint}(undef, num_qelem)
-    quadcol = Vector{Cint}(undef, num_qelem)
-    quadval = Vector{Cdouble}(undef, num_qelem)
-    ret = COPT_GetQConstr(
-        model.prob,
-        row,
-        quadrow,
-        quadcol,
-        quadval,
-        num_qelem,
-        C_NULL,
-        linind,
-        linval,
-        C_NULL,
-        C_NULL,
-        num_elem,
-        C_NULL,
-    )
-    _check_ret(model, ret)
-    return linind, linval, quadrow, quadcol, quadval
-end
-
 function MOI.get(
     model::Optimizer,
     ::MOI.ConstraintFunction,
     c::MOI.ConstraintIndex{MOI.ScalarQuadraticFunction{Float64},S},
 ) where {S}
-    a, b, I, J, V = _copt_getqconstr(model, c)
+    copt_row = Cint(_info(model, c).row - 1)
+    a, b, I, J, V = _copt_getqconstr(model, copt_row)
     affine_terms = MOI.ScalarAffineTerm{Float64}[]
     for (col, coef) in zip(a, b)
         push!(
@@ -2248,43 +2319,6 @@ function MOI.set(
     info.name = name
     model.name_to_constraint_index = nothing
     return
-end
-
-function _copt_getsos(model::Optimizer, copt_row::Cint)
-    p_reqsize = Ref{Cint}()
-    ret = COPT_GetSOSs(
-        model.prob,
-        1,
-        [copt_row],
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        p_reqsize,
-    )
-    _check_ret(model, ret)
-    num_elem = p_reqsize[]
-    sostype = Vector{Cint}(undef, 1)
-    sosbeg = Vector{Cint}(undef, 1)
-    soscnt = Vector{Cint}(undef, 1)
-    sosind = Vector{Cint}(undef, num_elem)
-    soswt = Vector{Cdouble}(undef, num_elem)
-    ret = COPT_GetSOSs(
-        model.prob,
-        1,
-        [copt_row],
-        sostype,
-        sosbeg,
-        soscnt,
-        sosind,
-        soswt,
-        num_elem,
-        C_NULL,
-    )
-    _check_ret(model, ret)
-    return sosind, soswt
 end
 
 function MOI.get(
@@ -2568,40 +2602,6 @@ function MOI.get(
     return MOI.get(model, MOI.VariablePrimal(), MOI.VariableIndex(c.value))
 end
 
-function _copt_get_row(model::Optimizer, copt_row::Cint)
-    p_reqsize = Ref{Cint}()
-    ret = COPT_GetRows(
-        model.prob,
-        1,
-        [copt_row],
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        C_NULL,
-        0,
-        p_reqsize,
-    )
-    _check_ret(model, ret)
-    num_elem = p_reqsize[]
-    rowbeg = Array{Cint}(undef, 1)
-    rowcnt = Array{Cint}(undef, 1)
-    columns = Array{Cint}(undef, num_elem)
-    coefficients = Array{Cdouble}(undef, num_elem)
-    ret = COPT_GetRows(
-        model.prob,
-        1,
-        [copt_row],
-        rowbeg,
-        rowcnt,
-        columns,
-        coefficients,
-        num_elem,
-        p_reqsize,
-    )
-    _check_ret(model, ret)
-    return columns, coefficients
-end
-
 function MOI.get(
     model::Optimizer,
     attr::MOI.ConstraintPrimal,
@@ -2805,7 +2805,8 @@ function MOI.get(
     ret = COPT_GetLpSolution(model.prob, x, C_NULL, C_NULL, C_NULL)
     _check_ret(model, ret)
     ∇f = zeros(length(x))
-    a_i, a_v, qrow, qcol, qval = _copt_getqconstr(model, c)
+    copt_row = Cint(_info(model, c).row - 1)
+    a_i, a_v, qrow, qcol, qval = _copt_getqconstr(model, copt_row)
     for (i, j, v) in zip(qrow, qcol, qval)
         ∇f[i+1] += v * x[j+1]
         ∇f[j+1] += v * x[i+1]
@@ -3452,7 +3453,8 @@ function MOI.get(
     ::MOI.ConstraintFunction,
     c::MOI.ConstraintIndex{MOI.VectorOfVariables,MOI.SecondOrderCone},
 )
-    a, b, I, J, V = _copt_getqconstr(model, c)
+    copt_row = Cint(_info(model, c).row - 1)
+    a, b, I, J, V = _copt_getqconstr(model, copt_row)
     @assert length(a) == length(b) == 0  # Check for no linear terms.
     t = nothing
     x = MOI.VariableIndex[]
