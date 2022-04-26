@@ -874,8 +874,8 @@ function MOI.add_variable(model::Optimizer)
         C_NULL,
         C_NULL,
         COPT_CONTINUOUS,
-        -Inf,
-        Inf,
+        -COPT_INFINITY,
+        COPT_INFINITY,
         "",
     )
     _check_ret(model, ret)
@@ -892,7 +892,7 @@ function MOI.add_variables(model::Optimizer, N::Int)
         C_NULL,
         C_NULL,
         C_NULL,
-        fill(-Inf, N),
+        fill(-COPT_INFINITY, N),
         C_NULL,
         C_NULL,
     )
