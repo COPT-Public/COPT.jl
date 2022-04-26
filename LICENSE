@@ -1,5 +1,9 @@
+COPT.jl was based upon the wrapper developed in https://github.com/jump-dev/CPLEX.jl
+and subsequently modified by COPT-Public.
+
 MIT License
 
+Copyright (c) 2013 Joey Huchette and contributors
 Copyright (c) 2022 COPT-Public
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
