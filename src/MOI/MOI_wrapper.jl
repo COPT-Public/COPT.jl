@@ -483,6 +483,32 @@ function _copt_get_col_info(model::Optimizer, name::String)
     return values
 end
 
+function _copt_get_col_lower(model::Optimizer, copt_col::Cint)
+    lb = _copt_get_col_info(model, "LB", copt_col)
+    return lb == -COPT_INFINITY ? -Inf : lb
+end
+
+function _copt_get_col_upper(model::Optimizer, copt_col::Cint)
+    ub = _copt_get_col_info(model, "UB", copt_col)
+    return ub == COPT_INFINITY ? Inf : ub
+end
+
+function _copt_set_col_lower(model::Optimizer, copt_col::Cint, value)
+    if value == -Inf
+        value = -COPT_INFINITY
+    end
+    ret = COPT_SetColLower(model.prob, 1, [copt_col], Cdouble[value])
+    return _check_ret(model, ret)
+end
+
+function _copt_set_col_upper(model::Optimizer, copt_col::Cint, value)
+    if value == +Inf
+        value = +COPT_INFINITY
+    end
+    ret = COPT_SetColUpper(model.prob, 1, [copt_col], Cdouble[value])
+    return _check_ret(model, ret)
+end
+
 function _copt_get_row_info(model::Optimizer, name::String, copt_row)
     p_value = Ref{Cdouble}()
     ret = COPT_GetRowInfo(model.prob, name, 1, [copt_row], p_value)
@@ -1477,24 +1503,19 @@ function _set_variable_lower_bound(model, info, value)
     if info.num_soc_constraints == 0
         # No SOC constraints, set directly.
         @assert isnan(info.lower_bound_if_soc)
-        ret =
-            COPT_SetColLower(model.prob, 1, Cint[info.column-1], Cdouble[value])
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), value)
     elseif value >= 0.0
         # Regardless of whether there are SOC constraints, this is a valid bound
         # for the SOC constraint and should over-ride any previous bounds.
         info.lower_bound_if_soc = NaN
-        ret =
-            COPT_SetColLower(model.prob, 1, Cint[info.column-1], Cdouble[value])
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), value)
     elseif isnan(info.lower_bound_if_soc)
         # Previously, we had a non-negative lower bound (i.e., it was set in the
         # case above). Now we're setting this with a negative one, but there are
         # still some SOC constraints, so we cache `value` and set the variable
         # lower bound to `0.0`.
         @assert value < 0.0
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column-1], [0.0])
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), 0.0)
         info.lower_bound_if_soc = value
     else
         # Previously, we had a negative lower bound. We're setting this with
@@ -1519,19 +1540,16 @@ function _get_variable_lower_bound(model, info)
         @assert info.lower_bound_if_soc < 0.0
         return info.lower_bound_if_soc
     end
-    lb = _copt_get_col_info(model, "LB", info.column - 1)
-    return lb == -COPT_INFINITY ? -Inf : lb
+    return _copt_get_col_lower(model, Cint(info.column - 1))
 end
 
 function _set_variable_upper_bound(model, info, value)
-    ret = COPT_SetColUpper(model.prob, 1, Cint[info.column-1], Cdouble[value])
-    _check_ret(model, ret)
+    _copt_set_col_upper(model, Cint(info.column - 1), value)
     return
 end
 
 function _get_variable_upper_bound(model, info)
-    ub = _copt_get_col_info(model, "UB", info.column - 1)
-    return ub == COPT_INFINITY ? Inf : ub
+    return _copt_get_col_upper(model, Cint(info.column - 1))
 end
 
 function MOI.delete(
@@ -1649,16 +1667,12 @@ function MOI.add_constraint(
     #   Warning:  Non-integral bounds for integer variables rounded.
     # See issue https://github.com/jump-dev/CPLEX.jl/issues/311
     if info.bound == _NONE
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column-1], [0.0])
-        _check_ret(model, ret)
-        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column-1], [1.0])
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), 0.0)
+        _copt_set_col_upper(model, Cint(info.column - 1), 1.0)
     elseif info.bound == _GREATER_THAN
-        ret = COPT_SetColUpper(model.prob, 1, Cint[info.column-1], [1.0])
-        _check_ret(model, ret)
+        _copt_set_col_upper(model, Cint(info.column - 1), 1.0)
     elseif info.bound == _LESS_THAN
-        ret = COPT_SetColLower(model.prob, 1, Cint[info.column-1], [0.0])
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), 0.0)
     end
     info.type = COPT_BINARY
     return MOI.ConstraintIndex{MOI.VariableIndex,MOI.ZeroOne}(f.value)
@@ -1682,36 +1696,12 @@ function MOI.delete(
     # we added '[0'. If it is anything else, both bounds were set by the user,
     # so we don't need to worry.
     if info.bound == _NONE
-        ret = COPT_SetColLower(
-            model.prob,
-            1,
-            Cint[info.column-1],
-            [-COPT_INFINITY],
-        )
-        _check_ret(model, ret)
-        ret = COPT_SetColUpper(
-            model.prob,
-            1,
-            Cint[info.column-1],
-            [+COPT_INFINITY],
-        )
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), -Inf)
+        _copt_set_col_upper(model, Cint(info.column - 1), Inf)
     elseif info.bound == _GREATER_THAN
-        ret = COPT_SetColUpper(
-            model.prob,
-            1,
-            Cint[info.column-1],
-            [+COPT_INFINITY],
-        )
-        _check_ret(model, ret)
+        _copt_set_col_upper(model, Cint(info.column - 1), Inf)
     elseif info.bound == _LESS_THAN
-        ret = COPT_SetColLower(
-            model.prob,
-            1,
-            Cint[info.column-1],
-            [-COPT_INFINITY],
-        )
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(info.column - 1), -Inf)
     end
     info.type = COPT_CONTINUOUS
     model.name_to_constraint_index = nothing
@@ -3366,8 +3356,7 @@ function MOI.add_constraint(
     lb = _get_variable_lower_bound(model, t_info)
     if isnan(t_info.lower_bound_if_soc) && lb < 0.0
         t_info.lower_bound_if_soc = lb
-        ret = COPT_SetColLower(model.prob, 1, Cint[t_info.column-1], [0.0])
-        _check_ret(model, ret)
+        _copt_set_col_lower(model, Cint(t_info.column - 1), 0.0)
     end
     t_info.num_soc_constraints += 1
 
