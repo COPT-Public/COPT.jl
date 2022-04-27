@@ -29,7 +29,7 @@ end
 
 function default_installation_path(copt_home_dir::AbstractString)
     if Sys.iswindows()
-        return escape_string("C:\\Program Files\\$copt_home_dir")
+        return escape_string("C:\\Program Files\\COPT")
     elseif Sys.isapple()
         return "/Applications/$copt_home_dir"
     else
