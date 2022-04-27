@@ -29,7 +29,7 @@ end
 
 function default_installation_path(copt_home_dir::AbstractString)
     if Sys.iswindows()
-        return escape_string("C:\\Program Files\\COPT")
+        return escape_string("C:\\Program Files\\$copt_home_dir")
     elseif Sys.isapple()
         return "/Applications/$copt_home_dir"
     else
@@ -80,7 +80,7 @@ function check_copt_in_environment_variables()
     if haskey(ENV, _COPT_HOME_ENV)
         for path in split(ENV[_COPT_HOME_ENV], ';')
             if isdir(path)
-                guessed_file = joinpath(path, "lib", library_name())
+                guessed_file = joinpath(path, Sys.iswindows() ? "bin" : "lib", library_name())
                 if isfile(guessed_file)
                     push!(libnames, guessed_file)
                 end
