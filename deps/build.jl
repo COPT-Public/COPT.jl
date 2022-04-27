@@ -27,6 +27,10 @@ function library_name()
     return "$(prefix)copt.$(Libdl.dlext)"
 end
 
+function library_dir()
+    return Sys.iswindows() ? "bin" : "lib"
+end
+
 function default_installation_path(copt_home_dir::AbstractString)
     if Sys.iswindows()
         return escape_string("C:\\Program Files\\$copt_home_dir")
@@ -80,7 +84,7 @@ function check_copt_in_environment_variables()
     if haskey(ENV, _COPT_HOME_ENV)
         for path in split(ENV[_COPT_HOME_ENV], ';')
             if isdir(path)
-                guessed_file = joinpath(path, Sys.iswindows() ? "bin" : "lib", library_name())
+                guessed_file = joinpath(path, library_dir(), library_name())
                 if isfile(guessed_file)
                     push!(libnames, guessed_file)
                 end
@@ -102,7 +106,7 @@ function check_copt_in_default_paths()
     for copt_home_dir in copt_home_dirs
         path = default_installation_path(copt_home_dir)
         if isdir(path)
-            guessed_file = joinpath(path, "lib", library_name())
+            guessed_file = joinpath(path, library_dir(), library_name())
             if isfile(guessed_file)
                 push!(libnames, guessed_file)
             end
