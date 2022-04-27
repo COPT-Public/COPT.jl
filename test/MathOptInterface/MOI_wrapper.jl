@@ -26,8 +26,6 @@ end
 function test_runtests()
     model = MOI.Bridges.full_bridge_optimizer(COPT.Optimizer(), Float64)
     MOI.set(model, MOI.Silent(), true)
-    # Turn off presolve reductions so CPLEX will generate infeasibility
-    # certificates.
     MOI.set(model, MOI.RawOptimizerAttribute("Presolve"), 0)
     MOI.Test.runtests(
         model,
