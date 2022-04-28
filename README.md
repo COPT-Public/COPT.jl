@@ -1,12 +1,15 @@
 # Using Julia interface for COPT (Cardinal Optimizer)
 
+COPT (Cardinal Optimizer) is a mathematical optimization solver for large-scale optimization problems.
+It includes high-performance solvers for LP, MIP, SOCP, convex QP and convex QCP.
+
 ## Prerequisite
 
 First of all, please apply for free personal license from [COPT application page](https://www.shanshu.ai/copt).
 
 Please make sure COPT is installed properly and you should be able to run examples in COPT package.
 
-Please note that the COPT Julia interface can only work with COPT 4.0.6 or above.
+It requires COPT 4.0.6 or above. It works with Julia 1.6 or above.
 
 ## Installation
 
@@ -45,4 +48,4 @@ optimize!(model)
 
 Please refer to [Getting started with JuMP](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_JuMP/) 
 for a quick introduction to writing and solving optimization models with JuMP.
-The model above is adapt from the introduction page.
+The model above is adapted from the introduction page.
