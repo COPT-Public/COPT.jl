@@ -56,8 +56,23 @@ function _get_version_number()
     return VersionNumber(0, 0, 0)
 end
 
+function _get_codegen_dir(version::VersionNumber)
+    # src/genX.Y.Z contains the low-level Julia wrapper around the C API for
+    # COPT version X.Y.Z. We may not provide a low-level wrapper for each patch
+    # version. Instead we assume that the COPT library is compatible with the
+    # wrapper of a previous patch version.
+    for patch in reverse(0:version.patch)
+        gen_version = VersionNumber(version.major, version.minor, patch)
+        dirname = "gen$(gen_version)"
+        if isdir(joinpath(@__DIR__, dirname))
+            return dirname
+        end
+    end
+    return "gen$(version)"
+end
+
 const _COPT_VERSION = _get_version_number()
-const _GEN_DIR = "gen$_COPT_VERSION"
+const _GEN_DIR = _get_codegen_dir(_COPT_VERSION)
 
 if isdir(joinpath(@__DIR__, _GEN_DIR))
     include("$_GEN_DIR/libcopt.jl")
