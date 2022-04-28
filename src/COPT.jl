@@ -6,7 +6,28 @@
 
 module COPT
 
+import Libdl
+import Pkg
+
+# deps.jl file is always built via `Pkg.build`, even if we didn't find a local
+# install and we want to use the artifact instead. This is so COPT.jl will be
+# recompiled if we update the file.
 include(joinpath(dirname(@__DIR__), "deps", "deps.jl"))
+if isdefined(@__MODULE__, :libcopt)
+    # deps.jl must define a local installation.
+elseif Sys.islinux() || Sys.isapple()
+    # No local installation defined in deps.jl. Use the artifact instead.
+    coptdir = "copt40"
+    libdir = "lib"
+    libname = "libcopt." * Libdl.dlext
+    const libcopt =
+        joinpath(Pkg.Artifacts.artifact"copt", coptdir, libdir, libname)
+else
+    error("""
+        COPT not properly installed. Please run Pkg.build(\"COPT\"). For
+        more information go to https://github.com/COPT-Public/COPT.jl
+    """)
+end
 
 function _get_version_number()
     buffer_size = 1024

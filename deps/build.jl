@@ -124,11 +124,10 @@ function try_local_installation()
         if found_copt_lib !== nothing
             write_depsfile(Libdl.dlpath(found_copt_lib))
             @info("Using COPT found in location `$(found_copt_lib)`")
-            return
+            return true
         end
     end
-
-    return error(get_error_message_if_not_found())
+    return false
 end
 
 if get(ENV, "JULIA_REGISTRYCI_AUTOMERGE", "false") == "true"
@@ -136,5 +135,17 @@ if get(ENV, "JULIA_REGISTRYCI_AUTOMERGE", "false") == "true"
     # Julia's registry AutoMerge to work. Just write a fake libcopt path.
     write_depsfile("julia_registryci_automerge")
 else
-    try_local_installation()
+    success = try_local_installation()
+    if !success && (Sys.islinux() || Sys.isapple())
+        open(_DEPS_FILE, "w") do io
+            return println(
+                io,
+                "# No libcopt constant; we're using the Artifact.",
+            )
+        end
+        success = true
+    end
+    if !success
+        error(get_error_message_if_not_found())
+    end
 end
