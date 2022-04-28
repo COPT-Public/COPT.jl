@@ -103,7 +103,7 @@ end
 function __init__()
     # Respect the -q and --banner flag
     silent = Base.JLOptions().banner == 0
-    if isinteractive() && !silent
+    if !silent
         print(_get_banner())
     end
 end
