@@ -29,7 +29,7 @@ else
     """)
 end
 
-function _get_version_number()
+function _get_banner()
     buffer_size = 1024
     buffer = zeros(Cchar, buffer_size)
     ret = ccall(
@@ -40,12 +40,17 @@ function _get_version_number()
         buffer_size,
     )
     if ret == 0
-        banner = unsafe_string(pointer(buffer))
-        m = match(r"Cardinal Optimizer v([0-9]+)\.([0-9]+)\.([0-9]+)", banner)
-        if length(m.captures) == 3
-            major, minor, technical = parse.(Int, m.captures)
-            return VersionNumber(major, minor, technical)
-        end
+        return unsafe_string(pointer(buffer))
+    end
+    return error("COPT error $ret: Unable to get the banner.")
+end
+
+function _get_version_number()
+    banner = _get_banner()
+    m = match(r"Cardinal Optimizer v([0-9]+)\.([0-9]+)\.([0-9]+)", banner)
+    if length(m.captures) == 3
+        major, minor, technical = parse.(Int, m.captures)
+        return VersionNumber(major, minor, technical)
     end
     error("Failed to detect the version of the COPT library")
     return VersionNumber(0, 0, 0)
@@ -78,6 +83,14 @@ for sym in filter(
     names(@__MODULE__, all = true),
 )
     @eval export $sym
+end
+
+function __init__()
+    # Respect the -q and --banner flag
+    silent = Base.JLOptions().banner == 0
+    if isinteractive() && !silent
+        print(_get_banner())
+    end
 end
 
 end
