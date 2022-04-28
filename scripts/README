@@ -12,3 +12,14 @@ into a Julia session. This will create a directory src/genX.Y.Z.
 When the major or minor version number changes, then in addition to generating
 the low-level wrapper, you also need to adjust the installer. In deps/build.jl
 search for the old version number (e.g. "40" and "4.0") and add the new one.
+
+## Updating the automatic installation
+
+In order to change the COPT version that is downloaded by the automatic
+installer, you need to adjust the "version" and "pkgdir" constants in
+scripts/generate_artifacts_toml.jl and then include the file into a Julia
+session. This will re-create the file Artifacts.toml in the top level directory.
+Check that the URLs are correct.
+
+If the major or minor version changed, you will also need to adjust the
+"coptdir" variable at the top of src/COPT.jl, e.g. from copt40 to copt50.
