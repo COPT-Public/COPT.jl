@@ -12,7 +12,7 @@ const pkgname = Dict{Tuple,String}(
     ("aarch64", "macos") => "CardinalOptimizer-$(version)-aarch64_mac.tar.gz",
     ("x86_64", "linux") => "CardinalOptimizer-$(version)-lnx64.tar.gz",
     ("x86_64", "macos") => "CardinalOptimizer-$(version)-osx64.tar.gz",
-    ("x86_64", "windows") => "CardinalOptimizer-$(version)-win64.zip",
+    ("x86_64", "windows") => "CardinalOptimizer-$(version)-win64.tar.gz",
 )
 
 const urlbase = Dict{Tuple,String}(
@@ -52,10 +52,11 @@ quote_string(s::AbstractString) = "\"$s\""
 
 function write_artifacts_toml()
     f = open(joinpath(dirname(@__DIR__), "Artifacts.toml"), "w")
-    # Automatic installation on Windows is not supported because Pkg only
-    # supports downloading of tar files, not zip files.
     for arch in ["aarch64"; "x86_64"]
-        for os in ["linux"; "macos"]
+        for os in ["linux"; "macos"; "windows"]
+            if !haskey(pkgname, (arch, os))
+                continue # unsupported combination of architecture and OS
+            end
             pkg = pkgname[arch, os]
             url = urlbase[arch, os] * '/' * pkg
             println(f, "[[copt]]")

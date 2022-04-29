@@ -34,3 +34,12 @@ git-tree-sha1 = "e3e9da5fe81b8c1a4db5d551ef7dba30da6e7f4f"
     url = "https://pub.shanshu.ai/download/copt/4.0.7/osx64/CardinalOptimizer-4.0.7-osx64.tar.gz"
     sha256 = "b862d675007156ca0b7c3cc0168f9340a0d275613fe7481a9eefe237af6bcb27"
 
+[[copt]]
+arch = "x86_64"
+os = "windows"
+git-tree-sha1 = "ac107ec0930ed47ecbe87665f0aeed39be40c904"
+
+    [[copt.download]]
+    url = "https://pub.shanshu.ai/download/copt/4.0.7/win64/CardinalOptimizer-4.0.7-win64.tar.gz"
+    sha256 = "ace10197369ee28b130ea76128c48f30190de809b75d8176537d3aaffd99a726"
+
