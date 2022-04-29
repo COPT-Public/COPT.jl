@@ -15,7 +15,7 @@ It requires COPT 4.0.5 or above. It works with Julia 1.6 or above.
 
 Please install JuMP and COPT Julia interface from Julia with:
 
-```
+```julia
 import Pkg
 Pkg.add("JuMP")
 Pkg.add(url="https://github.com/COPT-Public/COPT.jl/")
@@ -30,7 +30,7 @@ We strongly recommend that you apply for a license by following the link above.
 
 When the installation is done, you should be able to build and solve an LP problem with:
 
-```
+```julia
 using JuMP
 using COPT
 model = Model(COPT.Optimizer)
