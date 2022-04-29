@@ -15,11 +15,12 @@ import Pkg
 include(joinpath(dirname(@__DIR__), "deps", "deps.jl"))
 if isdefined(@__MODULE__, :libcopt)
     # deps.jl must define a local installation.
-elseif Sys.islinux() || Sys.isapple()
+elseif Sys.islinux() || Sys.isapple() || Sys.iswindows()
     # No local installation defined in deps.jl. Use the artifact instead.
     coptdir = "copt40"
-    libdir = "lib"
-    libname = "libcopt." * Libdl.dlext
+    libdir = Sys.iswindows() ? "bin" : "lib"
+    prefix = Sys.iswindows() ? "" : "lib"
+    libname = prefix * "copt." * Libdl.dlext
     const libcopt =
         joinpath(Pkg.Artifacts.artifact"copt", coptdir, libdir, libname)
 else
