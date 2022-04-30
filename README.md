@@ -26,6 +26,10 @@ installing COPT Julia interface will automatically download necessary solver bin
 Without a license, you can solve small models for non-commercial purpose.
 We strongly recommend that you apply for a license by following the link above.
 
+**Notes**<br>
+**Windows:** we are experimenting automatic download for Windows too. It doesn’t quite work yet. So, you will need to install the COPT fully by following the user guide to be able to use the interface on Windows.<br>
+**MacOS Apple M1/ARM:** on MacOS with Apple M1 chips, Intel based program can run via *Rosetta*. Please make sure that the *COPT build* matches the *Julia build*. We recommend the Intel based COPT and Julia build, as the Apple M1/ARM build of Julia is experimental.
+
 ## Quick check
 
 When the installation is done, you should be able to build and solve an LP problem with:
