@@ -15,7 +15,7 @@ import Pkg
 include(joinpath(dirname(@__DIR__), "deps", "deps.jl"))
 if isdefined(@__MODULE__, :libcopt)
     # deps.jl must define a local installation.
-elseif Sys.islinux() || Sys.isapple() || Sys.iswindows()
+elseif Sys.islinux() || Sys.isapple()
     # No local installation defined in deps.jl. Use the artifact instead.
     coptdir = "copt40"
     libdir = Sys.iswindows() ? "bin" : "lib"
