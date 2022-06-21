@@ -135,7 +135,7 @@ end
 if get(ENV, "JULIA_REGISTRYCI_AUTOMERGE", "false") == "true"
     # We need to be able to install and load this package without error for
     # Julia's registry AutoMerge to work. Just write a fake libcopt path.
-    write_depsfile("julia_registryci_automerge")
+    write_depsfile("__skipped_installation__")
 else
     success = try_local_installation()
     if !success && (Sys.islinux() || Sys.isapple())

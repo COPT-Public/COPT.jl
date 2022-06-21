@@ -31,6 +31,12 @@ else
 end
 
 function _get_banner()
+    if libcopt == "__skipped_installation__"
+        # The deps file is fake, with the intention to make COPT.jl loadable but
+        # not usable. The version number in the fake banner must correspond to
+        # an existing src/genX.Y.Z directory.
+        return "Fake Cardinal Optimizer v5.0.1"
+    end
     buffer_size = 1024
     buffer = zeros(Cchar, buffer_size)
     ret = ccall(
