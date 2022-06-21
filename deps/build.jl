@@ -13,6 +13,7 @@ end
 
 const _COPT_VERS = [ # From oldest to most recent.
     "40",
+    "50",
 ]
 const _COPT_HOME_ENV = "COPT_HOME"
 
@@ -48,6 +49,7 @@ function get_error_message_if_not_found()
     The versions of COPT supported by COPT.jl are:
 
     * 4.0
+    * 5.0
 
     You must download and install one of these versions separately.
 
@@ -56,7 +58,7 @@ function get_error_message_if_not_found()
     location):
 
     ```
-    ENV["COPT_HOME"] = "$(default_installation_path("copt40"))"
+    ENV["COPT_HOME"] = "$(default_installation_path("copt50"))"
     import Pkg
     Pkg.add("COPT")
     Pkg.build("COPT")

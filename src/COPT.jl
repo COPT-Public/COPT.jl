@@ -17,7 +17,7 @@ if isdefined(@__MODULE__, :libcopt)
     # deps.jl must define a local installation.
 elseif Sys.islinux() || Sys.isapple()
     # No local installation defined in deps.jl. Use the artifact instead.
-    coptdir = "copt40"
+    coptdir = "copt50"
     libdir = Sys.iswindows() ? "bin" : "lib"
     prefix = Sys.iswindows() ? "" : "lib"
     libname = prefix * "copt." * Libdl.dlext
