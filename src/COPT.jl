@@ -15,19 +15,24 @@ import LazyArtifacts
 include(joinpath(dirname(@__DIR__), "deps", "deps.jl"))
 if isdefined(@__MODULE__, :libcopt)
     # deps.jl must define a local installation.
-elseif Sys.islinux() || Sys.isapple()
-    # No local installation defined in deps.jl. Use the artifact instead.
-    coptdir = "copt50"
-    libdir = Sys.iswindows() ? "bin" : "lib"
-    prefix = Sys.iswindows() ? "" : "lib"
-    libname = prefix * "copt." * Libdl.dlext
-    const libcopt =
-        joinpath(LazyArtifacts.artifact"copt", coptdir, libdir, libname)
 else
-    error("""
-        COPT not properly installed. Please run Pkg.build(\"COPT\"). For
-        more information go to https://github.com/COPT-Public/COPT.jl
-    """)
+    # It's important we use `@static` here, otherwise the compiler will try to
+    # evaluate artifact"copt" on a Windows machine, even though at run-time this
+    # branch will never get executed.
+    @static if Sys.islinux() || Sys.isapple()
+        # No local installation defined in deps.jl. Use the artifact instead.
+        coptdir = "copt50"
+        libdir = Sys.iswindows() ? "bin" : "lib"
+        prefix = Sys.iswindows() ? "" : "lib"
+        libname = prefix * "copt." * Libdl.dlext
+        const libcopt =
+            joinpath(LazyArtifacts.artifact"copt", coptdir, libdir, libname)
+    else
+        error("""
+            COPT not properly installed. Please run Pkg.build(\"COPT\"). For
+            more information go to https://github.com/COPT-Public/COPT.jl
+        """)
+    end
 end
 
 function _get_banner()
