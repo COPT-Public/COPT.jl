@@ -2,6 +2,7 @@
 arch = "aarch64"
 os = "linux"
 git-tree-sha1 = "da73d5b8d5757b43ad1d01c5007acae0240b0048"
+lazy = true
 
     [[copt.download]]
     url = "https://pub.shanshu.ai/download/copt/5.0.1/aarch64/CardinalOptimizer-5.0.1-aarch64_lnx.tar.gz"
@@ -11,6 +12,7 @@ git-tree-sha1 = "da73d5b8d5757b43ad1d01c5007acae0240b0048"
 arch = "aarch64"
 os = "macos"
 git-tree-sha1 = "a8d3484389e2c7578d2961dd838b93d4bfee91b8"
+lazy = true
 
     [[copt.download]]
     url = "https://pub.shanshu.ai/download/copt/5.0.1/aarch64/CardinalOptimizer-5.0.1-aarch64_mac.tar.gz"
@@ -20,6 +22,7 @@ git-tree-sha1 = "a8d3484389e2c7578d2961dd838b93d4bfee91b8"
 arch = "x86_64"
 os = "linux"
 git-tree-sha1 = "2e1ebf024c86f9e76034b5114424ff8958e50277"
+lazy = true
 
     [[copt.download]]
     url = "https://pub.shanshu.ai/download/copt/5.0.1/linux64/CardinalOptimizer-5.0.1-lnx64.tar.gz"
@@ -29,6 +32,7 @@ git-tree-sha1 = "2e1ebf024c86f9e76034b5114424ff8958e50277"
 arch = "x86_64"
 os = "macos"
 git-tree-sha1 = "c0108719f6387a6d61b9384a1f9d674654048a24"
+lazy = true
 
     [[copt.download]]
     url = "https://pub.shanshu.ai/download/copt/5.0.1/osx64/CardinalOptimizer-5.0.1-osx64.tar.gz"

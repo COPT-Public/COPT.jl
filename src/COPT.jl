@@ -7,7 +7,7 @@
 module COPT
 
 import Libdl
-import Pkg
+import LazyArtifacts
 
 # deps.jl file is always built via `Pkg.build`, even if we didn't find a local
 # install and we want to use the artifact instead. This is so COPT.jl will be
@@ -22,7 +22,7 @@ elseif Sys.islinux() || Sys.isapple()
     prefix = Sys.iswindows() ? "" : "lib"
     libname = prefix * "copt." * Libdl.dlext
     const libcopt =
-        joinpath(Pkg.Artifacts.artifact"copt", coptdir, libdir, libname)
+        joinpath(LazyArtifacts.artifact"copt", coptdir, libdir, libname)
 else
     error("""
         COPT not properly installed. Please run Pkg.build(\"COPT\"). For
