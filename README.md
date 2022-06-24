@@ -18,7 +18,7 @@ Please install JuMP and COPT Julia interface from Julia with:
 ```julia
 import Pkg
 Pkg.add("JuMP")
-Pkg.add(url="https://github.com/COPT-Public/COPT.jl/")
+Pkg.add("COPT")
 ```
 
 When there is no COPT installed,
