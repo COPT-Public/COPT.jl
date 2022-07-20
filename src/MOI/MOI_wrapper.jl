@@ -278,20 +278,41 @@ Base.show(io::IO, model::Optimizer) = show(io, model.prob)
 
 function MOI.empty!(model::Optimizer)
     if model.prob != C_NULL
-        ret = COPT_DeleteProb(Ref(model.prob))
+        # Load an empty model into the COPT problem. This resets the problem
+        # while keeping the parameters.
+        ret = COPT_LoadProb(
+            model.prob,
+            0,
+            0,
+            COPT_MINIMIZE,
+            0.0,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+            C_NULL,
+        )
         _check_ret(model.env, ret)
-        model.env.attached_models -= 1
-    end
-    # Try open a new problem
-    p_ptr = Ref{Ptr{copt_prob}}(C_NULL)
-    ret = COPT_CreateProb(model.env.ptr, p_ptr)
-    _check_ret(model.env, ret)
-    model.prob = p_ptr[]
-    model.env.attached_models += 1
-    if model.silent
-        MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 0)
     else
-        MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
+        # Open a new problem.
+        p_ptr = Ref{Ptr{copt_prob}}(C_NULL)
+        ret = COPT_CreateProb(model.env.ptr, p_ptr)
+        _check_ret(model.env, ret)
+        model.prob = p_ptr[]
+        model.env.attached_models += 1
+        if model.silent
+            MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 0)
+        else
+            MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
+        end
     end
     model.name = ""
     model.objective_type = _UNSET_OBJECTIVE
