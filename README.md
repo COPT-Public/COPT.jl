@@ -5,11 +5,7 @@ It includes high-performance solvers for LP, MIP, SOCP, convex QP and convex QCP
 
 ## Prerequisite
 
-Please apply for free personal license from [COPT application page](https://www.shanshu.ai/copt).
-Please make sure COPT is installed properly and you should be able to run examples in COPT package.
-
-
-It requires COPT 4.0.5 or above. It works with Julia 1.6 or above.
+COPT.jl requires Julia version 1.6 or above. Please apply for a free personal COPT license from [COPT application page](https://www.shanshu.ai/copt).
 
 ## Installation
 
@@ -22,13 +18,12 @@ Pkg.add("COPT")
 ```
 
 When there is no COPT installed,
-installing COPT Julia interface will automatically download necessary solver binaries on Linux and MacOS.
+installing the COPT Julia interface will automatically download the necessary solver binaries.
 Without a license, you can solve small models for non-commercial purpose.
 We strongly recommend that you apply for a license by following the link above.
 
 **Notes**<br>
-**Windows:** we are experimenting automatic download for Windows too. It doesn’t quite work yet. So, you will need to install the COPT fully by following the user guide to be able to use the interface on Windows.<br>
-**MacOS Apple M1/ARM:** on MacOS with Apple M1 chips, Intel based program can run via *Rosetta*. Please make sure that the *COPT build* matches the *Julia build*. We recommend the Intel based COPT and Julia build, as the Apple M1/ARM build of Julia is experimental.
+**MacOS Apple M1/ARM:** on MacOS with Apple M1 chips, Intel based programs can run via *Rosetta*. When you installed the COPT binaries manually, then please make sure that the *COPT build* matches the *Julia build*. We recommend the Intel based COPT and Julia build, as the Apple M1/ARM build of Julia is experimental.
 
 ## Quick check
 
