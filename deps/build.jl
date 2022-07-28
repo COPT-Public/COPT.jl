@@ -138,7 +138,7 @@ if get(ENV, "JULIA_REGISTRYCI_AUTOMERGE", "false") == "true"
     write_depsfile("__skipped_installation__")
 else
     success = try_local_installation()
-    if !success && (Sys.islinux() || Sys.isapple())
+    if !success && (Sys.islinux() || Sys.isapple() || Sys.iswindows())
         open(_DEPS_FILE, "w") do io
             return println(
                 io,

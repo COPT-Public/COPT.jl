@@ -38,3 +38,13 @@ lazy = true
     url = "https://pub.shanshu.ai/download/copt/5.0.1/osx64/CardinalOptimizer-5.0.1-osx64.tar.gz"
     sha256 = "b2260bfc85f5c9f15872cdceb6e82f90ac95d7648e65c840a9a66e4972f27ce4"
 
+[[copt]]
+arch = "x86_64"
+os = "windows"
+git-tree-sha1 = "03f4b8a0ea6a6f5012cf2d192d133c7eafcf3de8"
+lazy = true
+
+    [[copt.download]]
+    url = "https://pub.shanshu.ai/download/copt/5.0.1/win64/CardinalOptimizer-5.0.1-win64.tar.gz"
+    sha256 = "96b55482bf2089384ad3cead4da513d65dc114991ae511b6a8a8500a87ca689b"
+

@@ -17,9 +17,10 @@ if isdefined(@__MODULE__, :libcopt)
     # deps.jl must define a local installation.
 else
     # It's important we use `@static` here, otherwise the compiler will try to
-    # evaluate artifact"copt" on a Windows machine, even though at run-time this
-    # branch will never get executed.
-    @static if Sys.islinux() || Sys.isapple()
+    # evaluate artifact"copt" on a system that does not support the
+    # Artifact-based installation, even though at run-time this branch will
+    # never get executed.
+    @static if Sys.islinux() || Sys.isapple() || Sys.iswindows()
         # No local installation defined in deps.jl. Use the artifact instead.
         coptdir = "copt50"
         libdir = Sys.iswindows() ? "bin" : "lib"
