@@ -1,10 +1,13 @@
 # Copyright (c) 2013: Joey Huchette and contributors
+# Copyright (c) 2021: Benoît Legat
 # Copyright (c) 2022: COPT-Public
 #
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
 import MathOptInterface
+using LinearAlgebra
+using SparseArrays
 
 const MOI = MathOptInterface
 const CleverDicts = MOI.Utilities.CleverDicts
@@ -34,6 +37,47 @@ const _SCALAR_SETS = Union{
     MOI.Interval{Float64},
 }
 
+#
+# The COPT SDP interface specifies the primal/dual pair
+#
+# min c'x,       max b'y
+# s.t. Ax = b,   c - A'y ∈ K
+#       x ∈ K
+#
+# where K is a product of `MOI.Zeros`, `MOI.Nonnegatives`, `MOI.SecondOrderCone`
+# and `MOI.PositiveSemidefiniteConeTriangle`.
+
+# This wrapper copies the MOI problem to the COPT dual so the natively supported
+# sets are `VectorAffineFunction`-in-`S` where `S` is one of the sets just
+# listed above.
+#
+# The wrapper is an adaption of the SeDuMi interface written by Beniot Legat and
+# Miles Lubin.
+
+MOI.Utilities.@product_of_sets(
+    Cones,
+    MOI.Zeros,
+    MOI.Nonnegatives,
+    MOI.SecondOrderCone,
+    MOI.PositiveSemidefiniteConeTriangle,
+)
+
+const OptimizerCache = MOI.Utilities.GenericModel{
+    Float64,
+    MOI.Utilities.ObjectiveContainer{Float64},
+    MOI.Utilities.VariablesContainer{Float64},
+    MOI.Utilities.MatrixOfConstraints{
+        Float64,
+        MOI.Utilities.MutableSparseMatrixCSC{
+            Float64,
+            Int,
+            MOI.Utilities.OneBasedIndexing,
+        },
+        Vector{Float64},
+        Cones{Float64},
+    },
+}
+
 mutable struct _VariableInfo
     index::MOI.VariableIndex
     column::Int
@@ -57,6 +101,15 @@ mutable struct _ConstraintInfo
     # COPT model.
     name::String
     _ConstraintInfo(row::Int, set::MOI.AbstractSet) = new(row, set, "")
+end
+
+mutable struct ConeSolution
+    x::Vector{Float64}
+    y::Vector{Float64}
+    slack::Vector{Float64}
+    objective_value::Float64
+    dual_objective_value::Float64
+    lpStatus::Cint
 end
 
 mutable struct Env
@@ -272,11 +325,110 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     end
 end
 
-_check_ret(model::Optimizer, ret::Cint) = _check_ret(model.env, ret)
+"""
+    ConeOptimizer(env::Union{Nothing, Env} = nothing)
 
-Base.show(io::IO, model::Optimizer) = show(io, model.prob)
+Create a new ConeOptimizer object. ConeOptimizer must be used in place of
+Optimizer for semi-definite programming (SDP) problems; i.e. for models with
+matrix variables.
 
-function MOI.empty!(model::Optimizer)
+You can share COPT `Env`s between models by passing an instance of `Env` as the
+first argument.
+
+Set optimizer attributes using `MOI.RawOptimizerAttribute` or
+`JuMP.set_optimizer_atttribute`.
+
+## Example
+
+```julia
+using JuMP, COPT
+const env = COPT.Env()
+model = JuMP.Model(() -> COPT.ConeOptimizer(env)
+set_optimizer_attribute(model, "LogToConsole", 0)
+```
+
+## `COPT.PassNames`
+
+By default, variable and constraint names are stored in the MOI wrapper, but are
+_not_ passed to the inner COPT model object because doing so can lead to a large
+performance degradation. The downside of not passing names is that various log
+messages from COPT will report names like constraint "R1" and variable "C2"
+instead of their actual names. You can change this behavior using
+`COPT.PassNames` to force COPT.jl to pass variable and constraint names to the
+inner COPT model object:
+
+```julia
+using JuMP, COPT
+model = JuMP.Model(COPT.ConeOptimizer)
+set_optimizer_attribute(model, COPT.PassNames(), true)
+```
+"""
+mutable struct ConeOptimizer <: MOI.AbstractOptimizer
+    # The low-level COPT model.
+    prob::Ptr{copt_prob}
+    env::Env
+
+    # Model name, not used by COPT.
+    name::String
+
+    # A flag to keep track of MOI.Silent, which over-rides the OutputFlag
+    # parameter.
+    silent::Bool
+
+    cones::Union{Nothing,Cones{Float64}}
+    solution::Union{Nothing,ConeSolution}
+
+    # COPT does detect when it needs more memory than it is available, but
+    # returns an error code instead of setting the termination status (like it
+    # does for the time limit). For convenience, and homogeinity with other
+    # solvers, we save the code obtained inside `_optimize!` in `ret_optimize`,
+    # and do not throw an exception case it should be interpreted as a
+    # termination status. Then, when/if the termination status is queried, we
+    # may override the result taking into account the `ret_optimize` field.
+    ret_optimize::Cint
+
+    # For more information on why `pass_names` is necessary, read:
+    # https://github.com/jump-dev/CPLEX.jl/issues/392
+    # The underlying problem is that we observed that add_variable, then set
+    # VariableName then add_variable (i.e., what CPLEX in direct-mode does) is
+    # faster than adding variable in batch then setting names in batch (i.e.,
+    # what default_copy_to does). If implementing MOI.copy_to, you should take
+    # this into consideration.
+    pass_names::Bool
+
+    function ConeOptimizer(env::Union{Nothing,Env} = nothing)
+        model = new()
+        model.prob = C_NULL
+        model.env = env === nothing ? Env() : env
+        model.name = ""
+        model.silent = false
+        model.pass_names = false
+        MOI.empty!(model)
+        finalizer(model) do m
+            ret = COPT_DeleteProb(Ref(m.prob))
+            _check_ret(m, ret)
+            m.env.attached_models -= 1
+            if env === nothing
+                # We created this env. Finalize it now
+                finalize(m.env)
+            elseif m.env.finalize_called && m.env.attached_models == 0
+                # We delayed finalizing `m.env` earlier because there were still
+                # models attached. Finalize it now.
+                COPT_DeleteEnv(Ref(m.env.ptr))
+                m.env.ptr = C_NULL
+            end
+        end
+        return model
+    end
+end
+
+function _check_ret(model::Union{Optimizer,ConeOptimizer}, ret::Cint)
+    return _check_ret(model.env, ret)
+end
+
+Base.show(io::IO, model::Union{Optimizer,ConeOptimizer}) = show(io, model.prob)
+
+function _reset_prob!(model::Union{Optimizer,ConeOptimizer})
     if model.prob != C_NULL
         # Load an empty model into the COPT problem. This resets the problem
         # while keeping the parameters.
@@ -314,6 +466,10 @@ function MOI.empty!(model::Optimizer)
             MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
         end
     end
+end
+
+function MOI.empty!(model::Optimizer)
+    _reset_prob!(model)
     model.name = ""
     model.objective_type = _UNSET_OBJECTIVE
     model.objective_sense = nothing
@@ -349,6 +505,23 @@ function MOI.is_empty(model::Optimizer)
     return true
 end
 
+function MOI.empty!(model::ConeOptimizer)
+    _reset_prob!(model)
+    model.name = ""
+    model.cones = nothing
+    model.solution = nothing
+    model.ret_optimize = Cint(0)
+    return
+end
+
+function MOI.is_empty(model::ConeOptimizer)
+    model.name != "" && return false
+    model.cones != nothing && return false
+    model.solution != nothing && return false
+    model.ret_optimize !== Cint(0) && return false
+    return true
+end
+
 """
     PassNames() <: MOI.AbstractOptimizerAttribute
 
@@ -358,14 +531,24 @@ information.
 """
 struct PassNames <: MOI.AbstractOptimizerAttribute end
 
-function MOI.set(model::Optimizer, ::PassNames, value::Bool)
+function MOI.set(
+    model::Union{Optimizer,ConeOptimizer},
+    ::PassNames,
+    value::Bool,
+)
     model.pass_names = value
     return
 end
 
-MOI.get(::Optimizer, ::MOI.SolverName) = "COPT"
+MOI.get(::Union{Optimizer,ConeOptimizer}, ::MOI.SolverName) = "COPT"
 
-MOI.get(::Optimizer, ::MOI.SolverVersion) = string(_COPT_VERSION)
+function MOI.get(::Union{Optimizer,ConeOptimizer}, ::MOI.SolverVersion)
+    return string(_COPT_VERSION)
+end
+
+function MOI.default_cache(::ConeOptimizer, ::Type{Float64})
+    return MOI.Utilities.UniversalFallback(OptimizerCache())
+end
 
 function MOI.supports(
     ::Optimizer,
@@ -442,15 +625,42 @@ function MOI.supports(
     return true
 end
 
-MOI.supports(::Optimizer, ::MOI.Name) = true
-MOI.supports(::Optimizer, ::MOI.Silent) = true
-MOI.supports(::Optimizer, ::MOI.NumberOfThreads) = true
-MOI.supports(::Optimizer, ::MOI.TimeLimitSec) = true
-MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
-MOI.supports(::Optimizer, ::MOI.RawOptimizerAttribute) = true
+function MOI.supports(
+    ::ConeOptimizer,
+    ::MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}},
+)
+    return true
+end
+
+function MOI.supports_constraint(
+    ::ConeOptimizer,
+    ::Type{MOI.VectorAffineFunction{Float64}},
+    ::Type{
+        <:Union{
+            MOI.Zeros,
+            MOI.Nonnegatives,
+            MOI.SecondOrderCone,
+            MOI.PositiveSemidefiniteConeTriangle,
+        },
+    },
+)
+    return true
+end
+
+MOI.supports(::Union{Optimizer,ConeOptimizer}, ::MOI.Name) = true
+MOI.supports(::Union{Optimizer,ConeOptimizer}, ::MOI.Silent) = true
+MOI.supports(::Union{Optimizer,ConeOptimizer}, ::MOI.NumberOfThreads) = true
+MOI.supports(::Union{Optimizer,ConeOptimizer}, ::MOI.TimeLimitSec) = true
+MOI.supports(::Union{Optimizer,ConeOptimizer}, ::MOI.ObjectiveSense) = true
+function MOI.supports(
+    ::Union{Optimizer,ConeOptimizer},
+    ::MOI.RawOptimizerAttribute,
+)
+    return true
+end
 
 """
-    _search_param_attr(model::Optimizer, name::AbstractString) -> Int
+    _search_param_attr(model::Union{Optimizer,ConeOptimizer}, name::AbstractString) -> Int
 
 Returns the type of a COPT parameter or attribute, given its name.
 -1: unknown
@@ -459,7 +669,10 @@ Returns the type of a COPT parameter or attribute, given its name.
  2: double attribute
  3: int attribute
 """
-function _search_param_attr(model::Optimizer, name::AbstractString)
+function _search_param_attr(
+    model::Union{Optimizer,ConeOptimizer},
+    name::AbstractString,
+)
     # Use undocumented COPT function
     # int COPT_SearchParamAttr(copt_prob* prob, const char* name, int* p_type)
     p_type = Ref{Cint}()
@@ -475,14 +688,14 @@ function _search_param_attr(model::Optimizer, name::AbstractString)
     return convert(Int, p_type[])
 end
 
-function _copt_get_int_attr(model::Optimizer, name::String)
+function _copt_get_int_attr(model::Union{Optimizer,ConeOptimizer}, name::String)
     p_value = Ref{Cint}()
     ret = COPT_GetIntAttr(model.prob, name, p_value)
     _check_ret(model, ret)
     return p_value[]
 end
 
-function _copt_get_dbl_attr(model::Optimizer, name::String)
+function _copt_get_dbl_attr(model::Union{Optimizer,ConeOptimizer}, name::String)
     p_value = Ref{Cdouble}()
     ret = COPT_GetDblAttr(model.prob, name, p_value)
     _check_ret(model, ret)
@@ -679,7 +892,11 @@ function _copt_getsos(model::Optimizer, copt_row::Cint)
     return sosind, soswt
 end
 
-function MOI.set(model::Optimizer, param::MOI.RawOptimizerAttribute, value)
+function MOI.set(
+    model::Union{Optimizer,ConeOptimizer},
+    param::MOI.RawOptimizerAttribute,
+    value,
+)
     param_type = _search_param_attr(model, param.name)
     if param_type == 0
         ret = COPT_SetDblParam(model.prob, param.name, value)
@@ -692,7 +909,10 @@ function MOI.set(model::Optimizer, param::MOI.RawOptimizerAttribute, value)
     end
 end
 
-function MOI.get(model::Optimizer, param::MOI.RawOptimizerAttribute)
+function MOI.get(
+    model::Union{Optimizer,ConeOptimizer},
+    param::MOI.RawOptimizerAttribute,
+)
     param_type = _search_param_attr(model, param.name)
     if param_type == 0
         p_value = Ref{Cdouble}()
@@ -709,12 +929,16 @@ function MOI.get(model::Optimizer, param::MOI.RawOptimizerAttribute)
     end
 end
 
-function MOI.set(model::Optimizer, ::MOI.TimeLimitSec, limit::Real)
+function MOI.set(
+    model::Union{Optimizer,ConeOptimizer},
+    ::MOI.TimeLimitSec,
+    limit::Real,
+)
     MOI.set(model, MOI.RawOptimizerAttribute("TimeLimit"), limit)
     return
 end
 
-function MOI.get(model::Optimizer, ::MOI.TimeLimitSec)
+function MOI.get(model::Union{Optimizer,ConeOptimizer}, ::MOI.TimeLimitSec)
     return MOI.get(model, MOI.RawOptimizerAttribute("TimeLimit"))
 end
 
@@ -2688,7 +2912,7 @@ const _RAW_MIPSTATUS_STRINGS =
         ),
     ])
 
-function _raw_lpstatus(model::Optimizer)
+function _raw_lpstatus(model::Union{Optimizer,ConeOptimizer})
     if haskey(_ERROR_TO_STATUS, model.ret_optimize)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
@@ -2706,7 +2930,7 @@ provide the complete text of this error message.
     )
 end
 
-function _raw_mipstatus(model::Optimizer)
+function _raw_mipstatus(model::Union{Optimizer,ConeOptimizer})
     if haskey(_ERROR_TO_STATUS, model.ret_optimize)
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
@@ -3132,11 +3356,15 @@ function MOI.get(model::Optimizer, attr::MOI.ResultCount)
     end
 end
 
-function MOI.get(model::Optimizer, ::MOI.Silent)
+function MOI.get(model::Union{Optimizer,ConeOptimizer}, ::MOI.Silent)
     return model.silent
 end
 
-function MOI.set(model::Optimizer, ::MOI.Silent, flag::Bool)
+function MOI.set(
+    model::Union{Optimizer,ConeOptimizer},
+    ::MOI.Silent,
+    flag::Bool,
+)
     model.silent = flag
     MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), flag ? 0 : 1)
     return
@@ -3538,4 +3766,349 @@ function MOI.get(
         @assert vbasis == COPT_BASIS_FIXED
         return MOI.NONBASIC
     end
+end
+
+###
+### Optimize methods for ConeOptimizer.
+###
+
+function _map_sets(f, sets, ::Type{S}) where {S}
+    F = MOI.VectorAffineFunction{Float64}
+    cis = MOI.get(sets, MOI.ListOfConstraintIndices{F,S}())
+    return Int[f(MOI.get(sets, MOI.ConstraintSet(), ci)) for ci in cis]
+end
+
+function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
+    MOI.empty!(dest)
+    index_map = MOI.Utilities.identity_index_map(src)
+    Ac = src.constraints
+    A = Ac.coefficients
+
+    model_attributes = MOI.get(src, MOI.ListOfModelAttributesSet())
+    objective_function_attr =
+        MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}()
+    b = zeros(A.n)
+    max_sense = MOI.get(src, MOI.ObjectiveSense()) == MOI.MAX_SENSE
+    objective_constant = 0.0
+    if objective_function_attr in MOI.get(src, MOI.ListOfModelAttributesSet())
+        obj = MOI.get(src, objective_function_attr)
+        objective_constant = MOI.constant(obj)
+        for term in obj.terms
+            b[term.variable.value] += (max_sense ? 1 : -1) * term.coefficient
+        end
+    end
+
+    A = SparseMatrixCSC(A.m, A.n, A.colptr, A.rowval, -A.nzval)
+
+    nFree = Ac.sets.num_rows[1]
+    nPositive = Ac.sets.num_rows[2] - Ac.sets.num_rows[1]
+    socDim = _map_sets(MOI.dimension, Ac, MOI.SecondOrderCone)
+    psdDim =
+        _map_sets(MOI.side_dimension, Ac, MOI.PositiveSemidefiniteConeTriangle)
+
+    c = Ac.constants
+    dest.cones = deepcopy(Ac.sets)
+
+    A_copt = sparse(A')
+    nRow, nCol = size(A_copt)
+    nBox = 0
+    nCone = 0
+    nRotatedCone = 0
+    nPrimalExp = 0
+    nDualExp = 0
+    nPrimalPow = 0
+    nDualPow = 0
+    nPSD = size(psdDim, 1)
+    nQObjElem = 0
+    colObj = -c
+    colMatBeg = Cint.(A_copt.colptr[1:nCol] .- 1)
+    colMatCnt = Cint.(diff(A_copt.colptr))
+    colMatIdx = Cint.(A_copt.rowval .- 1)
+    colMatElem = A_copt.nzval
+    rowRhs = b
+    outRowMap = zeros(Cint, nRow)
+
+    # Use undocumented COPT function
+    # int COPT_CALL COPT_LoadConeProb(copt_prob* prob,
+    #  int nCol,
+    #  int nRow,
+    #  int nFree,
+    #  int nPositive,
+    #  int nBox,
+    #  int nCone,
+    #  int nRotateCone,
+    #  int nPrimalExp,
+    #  int nDualExp,
+    #  int nPrimalPow,
+    #  int nDualPow,
+    #  int nPSD,
+    #  int nQObjElem,
+    #  int iObjSense,
+    #  double dObjConst,
+    #  const double* colObj,
+    #  const int* qObjRow,
+    #  const int* qObjCol,
+    #  const double* qObjElem,
+    #  const int* colMatBeg,
+    #  const int* colMatCnt,
+    #  const int* colMatIdx,
+    #  const double* colMatElem,
+    #  const double* rowRhs,
+    #  const double* boxLower,
+    #  const double* boxUpper,
+    #  const int* coneDim,
+    #  const int* rotateConeDim,
+    #  const int* primalPowDim,
+    #  const int* dualPowDim,
+    #  const double* primalPowAlpha,
+    #  const double* dualPowAlpha,
+    #  const int* psdDim,
+    #  const char* colType,
+    #  char const* const* colNames,
+    #  char const* const* rowNames,
+    #  char const* const* psdColNames,
+    #  int* outRowMap)
+    ret = ccall(
+        (:COPT_LoadConeProb, libcopt),
+        Cint,
+        (
+            Ptr{copt_prob},
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cint,
+            Cdouble,
+            Ptr{Cdouble},
+            Ptr{Cint},
+            Ptr{Cint},
+            Ptr{Cdouble},
+            Ptr{Cint},
+            Ptr{Cint},
+            Ptr{Cint},
+            Ptr{Cdouble},
+            Ptr{Cdouble},
+            Ptr{Cdouble},
+            Ptr{Cdouble},
+            Ptr{Cint},
+            Ptr{Cint},
+            Ptr{Cint},
+            Ptr{Cint},
+            Ptr{Cdouble},
+            Ptr{Cdouble},
+            Ptr{Cint},
+            Ptr{Cchar},
+            Ptr{Ptr{Cchar}},
+            Ptr{Ptr{Cchar}},
+            Ptr{Ptr{Cchar}},
+            Ptr{Cint},
+        ),
+        dest.prob,
+        nCol,
+        nRow,
+        nFree,
+        nPositive,
+        nBox,
+        nCone,
+        nRotatedCone,
+        nPrimalExp,
+        nDualExp,
+        nPrimalPow,
+        nDualPow,
+        nPSD,
+        nQObjElem,
+        COPT_MAXIMIZE,
+        objective_constant,
+        colObj,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        colMatBeg,
+        colMatCnt,
+        colMatIdx,
+        colMatElem,
+        rowRhs,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        psdDim,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        C_NULL,
+        outRowMap,
+    )
+    _check_ret(dest, ret)
+
+    nScalarCol = _copt_get_int_attr(dest, "Cols")
+    nPSDColLen = _copt_get_int_attr(dest, "PSDLens")
+    nScalarRow = _copt_get_int_attr(dest, "Rows")
+    nPSDRow = _copt_get_int_attr(dest, "PSDConstrs")
+
+    dest.ret_optimize = COPT_Solve(dest.prob)
+    _check_ret_optimize(dest)
+
+    lpStatus = _copt_get_int_attr(dest, "LpStatus")
+    if (lpStatus == COPT_LPSTATUS_OPTIMAL)
+        scalarColVal = zeros(Cdouble, nScalarCol)
+        psdColVal = zeros(Cdouble, nPSDColLen)
+        scalarRowDual = zeros(Cdouble, nScalarRow)
+        psdRowDual = zeros(Cdouble, nPSDRow)
+
+        primalSol = zeros(Cdouble, nCol)
+        dualSol = zeros(Cdouble, nRow)
+
+        # Get LP solution
+        ret = COPT_GetLpSolution(
+            dest.prob,
+            scalarColVal,
+            C_NULL,
+            scalarRowDual,
+            C_NULL,
+        )
+        _check_ret(dest, ret)
+
+        # Get PSD solution
+        # Use undocumented COPT function
+        # int COPT_GetPSDSolution(copt_prob* prob, double* psdColValue, double*
+        #  psdRowSlack, double* psdRowDual, double* psdColDual)
+        ret = ccall(
+            (:COPT_GetPSDSolution, libcopt),
+            Cint,
+            (
+                Ptr{copt_prob},
+                Ptr{Cdouble},
+                Ptr{Cdouble},
+                Ptr{Cdouble},
+                Ptr{Cdouble},
+            ),
+            dest.prob,
+            psdColVal,
+            C_NULL,
+            psdRowDual,
+            C_NULL,
+        )
+        _check_ret(dest, ret)
+
+        # Recover primal and dual solution
+        for i in 1:nScalarCol
+            primalSol[i] = scalarColVal[i]
+        end
+        for i in 1:nPSDColLen
+            primalSol[i+nScalarCol] = psdColVal[i]
+        end
+        for i in 1:nRow
+            if outRowMap[i] < 0
+                dualSol[i] = -psdRowDual[-outRowMap[i]]
+            else
+                dualSol[i] = -scalarRowDual[outRowMap[i]]
+            end
+        end
+        dest.solution = ConeSolution(
+            primalSol,
+            dualSol,
+            c - A * dualSol,
+            dot(c, primalSol) + objective_constant,
+            dot(b, dualSol) + objective_constant,
+            lpStatus,
+        )
+    end
+
+    return index_map, false
+end
+
+function MOI.optimize!(
+    dest::ConeOptimizer,
+    src::MOI.Utilities.UniversalFallback{OptimizerCache},
+)
+    MOI.Utilities.throw_unsupported(src)
+    return MOI.optimize!(dest, src.model)
+end
+
+function MOI.optimize!(dest::ConeOptimizer, src::MOI.ModelLike)
+    cache = OptimizerCache()
+    index_map = MOI.copy_to(cache, src)
+    MOI.optimize!(dest, cache)
+    return index_map, false
+end
+
+function MOI.get(model::ConeOptimizer, attr::MOI.RawStatusString)
+    _throw_if_optimize_in_progress(model, attr)
+    return _raw_lpstatus(model)[2]
+end
+
+function MOI.get(model::ConeOptimizer, attr::MOI.TerminationStatus)
+    _throw_if_optimize_in_progress(model, attr)
+    return _raw_lpstatus(model)[1]
+end
+
+MOI.get(model::ConeOptimizer, ::MOI.ResultCount) = 1
+
+function MOI.get(
+    model::ConeOptimizer,
+    attr::Union{MOI.PrimalStatus,MOI.DualStatus},
+)
+    if attr.result_index > MOI.get(model, MOI.ResultCount()) ||
+       model.solution isa Nothing
+        return MOI.NO_SOLUTION
+    end
+    lpStatus = model.solution.lpStatus
+    if lpStatus == COPT_LPSTATUS_OPTIMAL
+        return MOI.FEASIBLE_POINT
+    end
+    if lpStatus == COPT_LPSTATUS_IMPRECISE
+        return MOI.NEARLY_FEASIBLE_POINT
+    end
+    return MOI.NO_SOLUTION
+end
+
+function MOI.get(model::ConeOptimizer, attr::MOI.ObjectiveValue)
+    MOI.check_result_index_bounds(model, attr)
+    return model.solution.objective_value
+end
+
+function MOI.get(model::ConeOptimizer, attr::MOI.DualObjectiveValue)
+    MOI.check_result_index_bounds(model, attr)
+    return model.solution.dual_objective_value
+end
+
+function MOI.get(
+    model::ConeOptimizer,
+    attr::MOI.VariablePrimal,
+    vi::MOI.VariableIndex,
+)
+    MOI.check_result_index_bounds(model, attr)
+    return model.solution.y[vi.value]
+end
+
+function MOI.get(
+    model::ConeOptimizer,
+    attr::MOI.ConstraintPrimal,
+    ci::MOI.ConstraintIndex,
+)
+    MOI.check_result_index_bounds(model, attr)
+    return model.solution.slack[MOI.Utilities.rows(model.cones, ci)]
+end
+
+function MOI.get(
+    model::ConeOptimizer,
+    attr::MOI.ConstraintDual,
+    ci::MOI.ConstraintIndex,
+)
+    MOI.check_result_index_bounds(model, attr)
+    return model.solution.x[MOI.Utilities.rows(model.cones, ci)]
 end
