@@ -386,6 +386,7 @@ mutable struct ConeOptimizer <: MOI.AbstractOptimizer
     # termination status. Then, when/if the termination status is queried, we
     # may override the result taking into account the `ret_optimize` field.
     ret_optimize::Cint
+    solve_time::Float64
 
     # For more information on why `pass_names` is necessary, read:
     # https://github.com/jump-dev/CPLEX.jl/issues/392
@@ -511,6 +512,7 @@ function MOI.empty!(model::ConeOptimizer)
     model.cones = nothing
     model.solution = nothing
     model.ret_optimize = Cint(0)
+    model.solve_time = NaN
     return
 end
 
@@ -3309,7 +3311,7 @@ function MOI.get(model::Optimizer, attr::MOI.ObjectiveBound)
     )
 end
 
-function MOI.get(model::Optimizer, attr::MOI.SolveTimeSec)
+function MOI.get(model::Union{Optimizer,ConeOptimizer}, attr::MOI.SolveTimeSec)
     _throw_if_optimize_in_progress(model, attr)
     return model.solve_time
 end
@@ -3959,7 +3961,9 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     nScalarRow = _copt_get_int_attr(dest, "Rows")
     nPSDRow = _copt_get_int_attr(dest, "PSDConstrs")
 
+    start_time = time()
     dest.ret_optimize = COPT_Solve(dest.prob)
+    dest.solve_time = time() - start_time
     _check_ret_optimize(dest)
 
     lpStatus = _copt_get_int_attr(dest, "LpStatus")
