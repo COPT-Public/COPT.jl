@@ -3394,13 +3394,21 @@ function MOI.get(model::Union{Optimizer,ConeOptimizer}, ::MOI.NumberOfThreads)
     return Int(MOI.get(model, MOI.RawOptimizerAttribute("Threads")))
 end
 
-function MOI.set(model::Union{Optimizer,ConeOptimizer}, ::MOI.NumberOfThreads, x::Int)
+function MOI.set(
+    model::Union{Optimizer,ConeOptimizer},
+    ::MOI.NumberOfThreads,
+    x::Int,
+)
     return MOI.set(model, MOI.RawOptimizerAttribute("Threads"), x)
 end
 
 MOI.get(model::Union{Optimizer,ConeOptimizer}, ::MOI.Name) = model.name
 
-function MOI.set(model::Union{Optimizer,ConeOptimizer}, ::MOI.Name, name::String)
+function MOI.set(
+    model::Union{Optimizer,ConeOptimizer},
+    ::MOI.Name,
+    name::String,
+)
     return model.name = name
 end
 
@@ -4045,8 +4053,12 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
                 dualSol[i] = -scalarRowDual[outRowMap[i]]
             end
         end
-        objective_value = (max_sense ? 1 : -1) * LinearAlgebra.dot(b, dualSol) + objective_constant
-        dual_objective_value = (max_sense ? 1 : -1) * LinearAlgebra.dot(c, primalSol) + objective_constant
+        objective_value =
+            (max_sense ? 1 : -1) * LinearAlgebra.dot(b, dualSol) +
+            objective_constant
+        dual_objective_value =
+            (max_sense ? 1 : -1) * LinearAlgebra.dot(c, primalSol) +
+            objective_constant
         dest.solution = ConeSolution(
             primalSol,
             dualSol,
