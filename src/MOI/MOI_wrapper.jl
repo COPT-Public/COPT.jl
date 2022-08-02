@@ -3370,17 +3370,17 @@ function MOI.set(
     return
 end
 
-function MOI.get(model::Optimizer, ::MOI.NumberOfThreads)
+function MOI.get(model::Union{Optimizer,ConeOptimizer}, ::MOI.NumberOfThreads)
     return Int(MOI.get(model, MOI.RawOptimizerAttribute("Threads")))
 end
 
-function MOI.set(model::Optimizer, ::MOI.NumberOfThreads, x::Int)
+function MOI.set(model::Union{Optimizer,ConeOptimizer}, ::MOI.NumberOfThreads, x::Int)
     return MOI.set(model, MOI.RawOptimizerAttribute("Threads"), x)
 end
 
-MOI.get(model::Optimizer, ::MOI.Name) = model.name
+MOI.get(model::Union{Optimizer,ConeOptimizer}, ::MOI.Name) = model.name
 
-function MOI.set(model::Optimizer, ::MOI.Name, name::String)
+function MOI.set(model::Union{Optimizer,ConeOptimizer}, ::MOI.Name, name::String)
     return model.name = name
 end
 
