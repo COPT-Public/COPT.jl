@@ -3986,27 +3986,31 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
         )
         _check_ret(dest, ret)
 
-        # Get PSD solution
-        # Use undocumented COPT function
-        # int COPT_GetPSDSolution(copt_prob* prob, double* psdColValue, double*
-        #  psdRowSlack, double* psdRowDual, double* psdColDual)
-        ret = ccall(
-            (:COPT_GetPSDSolution, libcopt),
-            Cint,
-            (
-                Ptr{copt_prob},
-                Ptr{Cdouble},
-                Ptr{Cdouble},
-                Ptr{Cdouble},
-                Ptr{Cdouble},
-            ),
-            dest.prob,
-            psdColVal,
-            C_NULL,
-            psdRowDual,
-            C_NULL,
-        )
-        _check_ret(dest, ret)
+        # COPT returns an error when COPT_GetPSDSolution() is called on a
+        # non-SDP model.
+        if nPSDColLen != 0 || nPSDRow != 0
+            # Get PSD solution
+            # Use undocumented COPT function
+            # int COPT_GetPSDSolution(copt_prob* prob, double* psdColValue, double*
+            #  psdRowSlack, double* psdRowDual, double* psdColDual)
+            ret = ccall(
+                (:COPT_GetPSDSolution, libcopt),
+                Cint,
+                (
+                    Ptr{copt_prob},
+                    Ptr{Cdouble},
+                    Ptr{Cdouble},
+                    Ptr{Cdouble},
+                    Ptr{Cdouble},
+                ),
+                dest.prob,
+                psdColVal,
+                C_NULL,
+                psdRowDual,
+                C_NULL,
+            )
+            _check_ret(dest, ret)
+        end
 
         # Recover primal and dual solution
         for i in 1:nScalarCol
