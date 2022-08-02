@@ -4085,13 +4085,21 @@ function MOI.get(
     return MOI.NO_SOLUTION
 end
 
+function _check_solution_available(model::ConeOptimizer)
+    if model.solution == nothing
+        error("No solution available")
+    end
+end
+
 function MOI.get(model::ConeOptimizer, attr::MOI.ObjectiveValue)
     MOI.check_result_index_bounds(model, attr)
+    _check_solution_available(model)
     return model.solution.objective_value
 end
 
 function MOI.get(model::ConeOptimizer, attr::MOI.DualObjectiveValue)
     MOI.check_result_index_bounds(model, attr)
+    _check_solution_available(model)
     return model.solution.dual_objective_value
 end
 
@@ -4101,6 +4109,7 @@ function MOI.get(
     vi::MOI.VariableIndex,
 )
     MOI.check_result_index_bounds(model, attr)
+    _check_solution_available(model)
     return model.solution.y[vi.value]
 end
 
@@ -4110,6 +4119,7 @@ function MOI.get(
     ci::MOI.ConstraintIndex,
 )
     MOI.check_result_index_bounds(model, attr)
+    _check_solution_available(model)
     return model.solution.slack[MOI.Utilities.rows(model.cones, ci)]
 end
 
@@ -4119,5 +4129,6 @@ function MOI.get(
     ci::MOI.ConstraintIndex,
 )
     MOI.check_result_index_bounds(model, attr)
+    _check_solution_available(model)
     return model.solution.x[MOI.Utilities.rows(model.cones, ci)]
 end
