@@ -3805,6 +3805,7 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     nFree = Ac.sets.num_rows[1]
     nPositive = Ac.sets.num_rows[2] - Ac.sets.num_rows[1]
     socDim = _map_sets(MOI.dimension, Ac, MOI.SecondOrderCone)
+    rotDim = _map_sets(MOI.dimension, Ac, MOI.RotatedSecondOrderCone)
     psdDim =
         _map_sets(MOI.side_dimension, Ac, MOI.PositiveSemidefiniteConeTriangle)
 
@@ -3814,13 +3815,13 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     A_copt = sparse(A')
     nRow, nCol = size(A_copt)
     nBox = 0
-    nCone = 0
-    nRotatedCone = 0
+    nCone = length(socDim)
+    nRotatedCone = length(rotDim)
     nPrimalExp = 0
     nDualExp = 0
     nPrimalPow = 0
     nDualPow = 0
-    nPSD = size(psdDim, 1)
+    nPSD = length(psdDim)
     nQObjElem = 0
     colObj = -c
     colMatBeg = Cint.(A_copt.colptr[1:nCol] .- 1)
@@ -3941,13 +3942,13 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
         rowRhs,
         C_NULL,
         C_NULL,
+        convert(Array{Cint}, socDim),
+        convert(Array{Cint}, rotDim),
         C_NULL,
         C_NULL,
         C_NULL,
         C_NULL,
-        C_NULL,
-        C_NULL,
-        psdDim,
+        convert(Array{Cint}, psdDim),
         C_NULL,
         C_NULL,
         C_NULL,
