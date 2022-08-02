@@ -4027,12 +4027,14 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
                 dualSol[i] = -scalarRowDual[outRowMap[i]]
             end
         end
+        objective_value = (max_sense ? 1 : -1) * LinearAlgebra.dot(b, dualSol) + objective_constant
+        dual_objective_value = (max_sense ? 1 : -1) * LinearAlgebra.dot(c, primalSol) + objective_constant
         dest.solution = ConeSolution(
             primalSol,
             dualSol,
             c - A * dualSol,
-            dot(c, primalSol) + objective_constant,
-            dot(b, dualSol) + objective_constant,
+            objective_value,
+            dual_objective_value,
             lpStatus,
         )
     end
