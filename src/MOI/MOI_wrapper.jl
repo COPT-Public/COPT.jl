@@ -2919,6 +2919,15 @@ function _raw_lpstatus(model::Union{Optimizer,ConeOptimizer})
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
     status = _copt_get_int_attr(model, "LpStatus")
+    if isa(model, ConeOptimizer)
+        # ConeOptimizer solves the dualized problem. Flip infeasible and
+        # unbounded status.
+        if status == COPT_LPSTATUS_INFEASIBLE
+            status = COPT_LPSTATUS_UNBOUNDED
+        elseif status == COPT_LPSTATUS_UNBOUNDED
+            status = COPT_LPSTATUS_INFEASIBLE
+        end
+    end
     if haskey(_RAW_LPSTATUS_STRINGS, status)
         return _RAW_LPSTATUS_STRINGS[status]
     end
@@ -2937,6 +2946,15 @@ function _raw_mipstatus(model::Union{Optimizer,ConeOptimizer})
         return _ERROR_TO_STATUS[model.ret_optimize]
     end
     status = _copt_get_int_attr(model, "MipStatus")
+    if isa(model, ConeOptimizer)
+        # ConeOptimizer solves the dualized problem. Flip infeasible and
+        # unbounded status.
+        if status == COPT_MIPSTATUS_INFEASIBLE
+            status = COPT_MIPSTATUS_UNBOUNDED
+        elseif status == COPT_MIPSTATUS_UNBOUNDED
+            status = COPT_MIPSTATUS_INFEASIBLE
+        end
+    end
     if haskey(_RAW_MIPSTATUS_STRINGS, status)
         return _RAW_MIPSTATUS_STRINGS[status]
     end
