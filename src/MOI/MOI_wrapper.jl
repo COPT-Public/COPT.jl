@@ -12,6 +12,8 @@ using SparseArrays
 const MOI = MathOptInterface
 const CleverDicts = MOI.Utilities.CleverDicts
 
+include("psd_cone_bridge.jl")
+
 @enum(
     _BoundType,
     _NONE,
@@ -45,7 +47,7 @@ const _SCALAR_SETS = Union{
 #       x ∈ K
 #
 # where K is a product of `MOI.Zeros`, `MOI.Nonnegatives`, `MOI.SecondOrderCone`
-# and `MOI.PositiveSemidefiniteConeTriangle`.
+# and `ReorderedPSDCone`.
 
 # This wrapper copies the MOI problem to the COPT dual so the natively supported
 # sets are `VectorAffineFunction`-in-`S` where `S` is one of the sets just
@@ -59,7 +61,7 @@ MOI.Utilities.@product_of_sets(
     MOI.Zeros,
     MOI.Nonnegatives,
     MOI.SecondOrderCone,
-    MOI.PositiveSemidefiniteConeTriangle,
+    ReorderedPSDCone,
 )
 
 const OptimizerCache = MOI.Utilities.GenericModel{
@@ -423,6 +425,10 @@ mutable struct ConeOptimizer <: MOI.AbstractOptimizer
     end
 end
 
+function MOI.get(::ConeOptimizer, ::MOI.Bridges.ListOfNonstandardBridges)
+    return [ReorderedPSDConeBridge{Cdouble}]
+end
+
 function _check_ret(model::Union{Optimizer,ConeOptimizer}, ret::Cint)
     return _check_ret(model.env, ret)
 end
@@ -642,7 +648,7 @@ function MOI.supports_constraint(
             MOI.Zeros,
             MOI.Nonnegatives,
             MOI.SecondOrderCone,
-            MOI.PositiveSemidefiniteConeTriangle,
+            ReorderedPSDCone,
         },
     },
 )
@@ -3833,7 +3839,7 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     socDim = _map_sets(MOI.dimension, Ac, MOI.SecondOrderCone)
     rotDim = _map_sets(MOI.dimension, Ac, MOI.RotatedSecondOrderCone)
     psdDim =
-        _map_sets(MOI.side_dimension, Ac, MOI.PositiveSemidefiniteConeTriangle)
+        _map_sets(MOI.side_dimension, Ac, ReorderedPSDCone)
 
     c = Ac.constants
     dest.cones = deepcopy(Ac.sets)
