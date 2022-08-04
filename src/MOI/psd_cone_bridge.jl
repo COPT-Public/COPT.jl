@@ -1,5 +1,12 @@
+# Copyright (c) 2014: SCS.jl contributors
+# Copyright (c) 2022: COPT-Public
 #
-# Adapted from scaled_psd_cone_bridge.jl included in SCS.jl
+# Use of this source code is governed by an MIT-style license that can be found
+# in the LICENSE.md file or at https://opensource.org/licenses/MIT.
+
+#
+# Adapted from scaled_psd_cone_bridge.jl included in
+# https://github.com/jump-dev/SCS.jl.
 #
 
 struct ReorderedPSDCone <: MOI.AbstractVectorSet
