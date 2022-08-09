@@ -3838,8 +3838,7 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     nPositive = Ac.sets.num_rows[2] - Ac.sets.num_rows[1]
     socDim = _map_sets(MOI.dimension, Ac, MOI.SecondOrderCone)
     rotDim = _map_sets(MOI.dimension, Ac, MOI.RotatedSecondOrderCone)
-    psdDim =
-        _map_sets(MOI.side_dimension, Ac, ReorderedPSDCone)
+    psdDim = _map_sets(MOI.side_dimension, Ac, ReorderedPSDCone)
 
     c = Ac.constants
     dest.cones = deepcopy(Ac.sets)
@@ -4059,12 +4058,25 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
                 dualSol[i] = -scalarRowDual[outRowMap[i]]
             end
         end
+
+        objScale = ones(nCol)
+        i = nFree + nPositive + nCone + 1
+        for k = 1:nPSD
+            for j = 1:psdDim[k]
+                for l = i+1:i+psdDim[k]-j
+                    objScale[l] = 2.0
+                end
+                i += psdDim[k] + 1 - j 
+            end
+        end
+
         objective_value =
             (max_sense ? 1 : -1) * LinearAlgebra.dot(b, dualSol) +
             objective_constant
         dual_objective_value =
-            (max_sense ? 1 : -1) * LinearAlgebra.dot(c, primalSol) +
+            (max_sense ? 1 : -1) * LinearAlgebra.dot(c.*objScale, primalSol) +
             objective_constant
+              
         dest.solution = ConeSolution(
             primalSol,
             dualSol,
@@ -4073,6 +4085,7 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
             dual_objective_value,
             lpStatus,
         )
+
     end
 
     return index_map, false
