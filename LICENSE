@@ -1,10 +1,13 @@
 COPT.jl was based upon the wrappers developed in
-https://github.com/jump-dev/CPLEX.jl and https://github.com/jump-dev/SeDuMi.jl.
+- https://github.com/jump-dev/CPLEX.jl
+- https://github.com/jump-dev/SCS.jl
+- https://github.com/jump-dev/SeDuMi.jl
 It was subsequently modified by COPT-Public.
 
 MIT License
 
 Copyright (c) 2013 Joey Huchette and contributors
+Copyright (c) 2014: SCS.jl contributors
 Copyright (c) 2021: Benoît Legat
 Copyright (c) 2022 COPT-Public
 

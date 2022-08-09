@@ -2836,12 +2836,10 @@ function MOI.optimize!(model::Optimizer)
     # Catch [CTRL+C], even when Julia is run from a script not in interactive
     # mode. If `true`, then a script would call `atexit` without throwing the
     # `InterruptException`. `false` is the default in interactive mode.
-    #
-    # TODO(odow): Julia 1.5 exposes `Base.exit_on_sigint(::Bool)`.
-    ccall(:jl_exit_on_sigint, Cvoid, (Cint,), false)
+    Base.exit_on_sigint(false)
     _optimize!(model)
     if !isinteractive()
-        ccall(:jl_exit_on_sigint, Cvoid, (Cint,), true)
+        Base.exit_on_sigint(true)
     end
 
     model.solve_time = time() - start_time
@@ -3993,9 +3991,16 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     nScalarRow = _copt_get_int_attr(dest, "Rows")
     nPSDRow = _copt_get_int_attr(dest, "PSDConstrs")
 
+    # Catch [CTRL+C], even when Julia is run from a script not in interactive
+    # mode. If `true`, then a script would call `atexit` without throwing the
+    # `InterruptException`. `false` is the default in interactive mode.
+    Base.exit_on_sigint(false)
     start_time = time()
     dest.ret_optimize = COPT_Solve(dest.prob)
     dest.solve_time = time() - start_time
+    if !isinteractive()
+        Base.exit_on_sigint(true)
+    end
     _check_ret_optimize(dest)
 
     lpStatus = _copt_get_int_attr(dest, "LpStatus")
