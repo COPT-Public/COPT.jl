@@ -8,7 +8,6 @@
 module TestConeOptimizer
 
 using COPT
-using JuMP
 using LinearAlgebra
 using MathOptInterface
 using Test
@@ -55,24 +54,6 @@ function test_runtests()
         ],
     )
     return
-end
-
-function test_sdp_simple()
-    model = JuMP.Model(COPT.ConeOptimizer)
-
-    C = [1.0 -1.0; -1.0 2.0]
-
-    @variable(model, X[1:2, 1:2], PSD)
-    @variable(model, z[1:2] >= 0)
-    @objective(model, Min, C ⋅ X)
-    @constraint(model, c1, X[1, 1] - z[1] == 1)
-    @constraint(model, c2, X[2, 2] - z[2] == 1)
-    optimize!(model)
-
-    solution_summary(model)
-
-    @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
-    @test value.(X) ⋅ C ≈ dual(c1) + dual(c2)
 end
 
 end  # module
