@@ -4065,7 +4065,7 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
         end
 
         objScale = ones(nCol)
-        i = nFree + nPositive + nCone + 1
+        i = nFree + nPositive + nCone + nRotatedCone + 1
         for k = 1:nPSD
             for j = 1:psdDim[k]
                 for l = i+1:i+psdDim[k]-j
