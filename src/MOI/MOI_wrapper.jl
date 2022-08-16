@@ -4066,12 +4066,12 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
 
         objScale = ones(nCol)
         i = nFree + nPositive + nCone + nRotatedCone + 1
-        for k = 1:nPSD
-            for j = 1:psdDim[k]
-                for l = i+1:i+psdDim[k]-j
+        for k in 1:nPSD
+            for j in 1:psdDim[k]
+                for l in i+1:i+psdDim[k]-j
                     objScale[l] = 2.0
                 end
-                i += psdDim[k] + 1 - j 
+                i += psdDim[k] + 1 - j
             end
         end
 
@@ -4079,9 +4079,9 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
             (max_sense ? 1 : -1) * LinearAlgebra.dot(b, dualSol) +
             objective_constant
         dual_objective_value =
-            (max_sense ? 1 : -1) * LinearAlgebra.dot(c.*objScale, primalSol) +
+            (max_sense ? 1 : -1) * LinearAlgebra.dot(c .* objScale, primalSol) +
             objective_constant
-              
+
         dest.solution = ConeSolution(
             primalSol,
             dualSol,
@@ -4090,7 +4090,6 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
             dual_objective_value,
             lpStatus,
         )
-
     end
 
     return index_map, false

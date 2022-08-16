@@ -32,7 +32,10 @@ struct ReorderedPSDConeBridge{T,G} <: MOI.Bridges.Constraint.SetMapBridge{
     MOI.VectorAffineFunction{T},
     G,
 }
-    constraint::MOI.ConstraintIndex{MOI.VectorAffineFunction{T},ReorderedPSDCone}
+    constraint::MOI.ConstraintIndex{
+        MOI.VectorAffineFunction{T},
+        ReorderedPSDCone,
+    }
 end
 
 function MOI.Bridges.Constraint.concrete_bridge_type(
@@ -110,7 +113,7 @@ function _transform_function(func::MOI.VectorOfVariables, moi_to_copt)
     return _transform_function(new_f, moi_to_copt)
 end
 
-function _transform_function(func::Vector{T},  moi_to_copt::Bool) where {T}
+function _transform_function(func::Vector{T}, moi_to_copt::Bool) where {T}
     d = length(func)
     upper_to_lower, lower_to_upper = _upper_to_lower_triangular_permutation(d)
     if moi_to_copt
@@ -138,7 +141,7 @@ end
 # Used to set ConstraintDualStart
 function MOI.Bridges.inverse_adjoint_map_function(
     ::Type{<:ReorderedPSDConeBridge},
-    f)
+    f,
+)
     return _transform_function(f, true)
 end
-
