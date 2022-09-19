@@ -1,7 +1,7 @@
 using Tar, Inflate, SHA
 
 # COPT version that should be downloaded by the automatic installation.
-const version = "5.0.3"
+const version = "5.0.5"
 
 # Directory containing the COPT packages for all platforms. Needed only for
 # computing their hashes.
