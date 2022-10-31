@@ -22,7 +22,7 @@ else
     # never get executed.
     @static if Sys.islinux() || Sys.isapple() || Sys.iswindows()
         # No local installation defined in deps.jl. Use the artifact instead.
-        coptdir = "copt50"
+        coptdir = "copt60"
         libdir = Sys.iswindows() ? "bin" : "lib"
         prefix = Sys.iswindows() ? "" : "lib"
         libname = prefix * "copt." * Libdl.dlext
@@ -41,7 +41,7 @@ function _get_banner()
         # The deps file is fake, with the intention to make COPT.jl loadable but
         # not usable. The version number in the fake banner must correspond to
         # an existing src/genX.Y.Z directory.
-        return "Fake Cardinal Optimizer v5.0.1"
+        return "Fake Cardinal Optimizer v6.0.1"
     end
     buffer_size = 1024
     buffer = zeros(Cchar, buffer_size)

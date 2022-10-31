@@ -4,8 +4,8 @@
 
 using Clang.Generators
 
-const COPT_VERSION = "5.0.5"
-const COPT_HEADERS = ["/opt/copt50/include/copt.h"]
+const COPT_VERSION = "6.0.1"
+const COPT_HEADERS = ["/opt/copt60/include/copt.h"]
 
 const GEN_DIR = joinpath(dirname(@__DIR__), "src", "gen$(COPT_VERSION)")
 if !isdir(GEN_DIR)
