@@ -31,6 +31,12 @@ function test_runtests()
         model,
         MOI.Test.Config(atol = 1e-3, rtol = 1e-3),
         exclude = String[
+            # exclude tests that trigger bugs in COPT 6.0.1
+            "test_constraint_ZeroOne_bounds_3",
+            "test_linear_Indicator_ON_ONE",
+            "test_linear_Indicator_ON_ZERO",
+            "test_linear_Indicator_constant_term",
+            "test_linear_Indicator_integration",
             # TODO(odow): new tests
             "test_unbounded_",
             "test_infeasible_",
