@@ -2868,6 +2868,10 @@ const _RAW_LPSTATUS_STRINGS =
             (MOI.DUAL_INFEASIBLE, "The LP problem is unbounded."),
         COPT_LPSTATUS_NUMERICAL =>
             (MOI.NUMERICAL_ERROR, "Numerical trouble encountered."),
+        COPT_LPSTATUS_IMPRECISE => (
+            MOI.ALMOST_OPTIMAL,
+            "The LP problem is solved to optimality with relaxed tolerances.",
+        ),
         COPT_LPSTATUS_TIMEOUT => (
             MOI.TIME_LIMIT,
             "The LP optimization is stopped because of time limit.",
