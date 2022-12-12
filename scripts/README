@@ -12,6 +12,12 @@ julia> Generator.generate_wrapper(VersionNumber(6,0,3))
 
 This will create a directory src/gen6.0.3.
 
+Note: When the newly generated src/genX.Y.Z/libcopt.jl is identical to the
+previous one except for the line "const COPT_VERSION_TECHNICAL = Z", then you
+can delete the newly generated directory. When loading the COPT library, COPT.jl
+automatically falls back to the low-level wrapper of a previous technical
+version if the latest one does not exist.
+
 ## Updating to a new major or minor version
 
 When the major or minor version number changes, then in addition to generating
