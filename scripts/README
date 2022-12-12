@@ -17,6 +17,8 @@ This will create a directory src/gen6.0.3.
 When the major or minor version number changes, then in addition to generating
 the low-level wrapper, you also need to adjust the installer. In deps/build.jl
 search for the old version number (e.g. "40" and "4.0") and add the new one.
+Also adjust the "coptdir" variable at the top of src/COPT.jl, e.g. from copt40
+to copt50.
 
 ## Updating the automatic installation
 
@@ -27,6 +29,3 @@ installer, Artifacts.toml needs to be updated. Use:
 julia> include("scripts/generator.jl")
 julia> Generator.generate_artifacts_toml(VersionNumber(6,0,3))
 ```
-
-If the major or minor version changed, you will also need to adjust the
-"coptdir" variable at the top of src/COPT.jl, e.g. from copt40 to copt50.
