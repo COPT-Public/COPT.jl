@@ -21,10 +21,12 @@ search for the old version number (e.g. "40" and "4.0") and add the new one.
 ## Updating the automatic installation
 
 In order to change the COPT version that is downloaded by the automatic
-installer, you need to adjust the "version" and "pkgdir" constants in
-scripts/generate_artifacts_toml.jl and then include the file into a Julia
-session. This will re-create the file Artifacts.toml in the top level directory.
-Check that the URLs are correct.
+installer, Artifacts.toml needs to be updated. Use:
+
+```julia
+julia> include("scripts/generator.jl")
+julia> Generator.generate_artifacts_toml(VersionNumber(6,0,3))
+```
 
 If the major or minor version changed, you will also need to adjust the
 "coptdir" variable at the top of src/COPT.jl, e.g. from copt40 to copt50.
