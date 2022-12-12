@@ -2,10 +2,15 @@
 
 ## Updating to a new technical version
 
-When only the technical version number changes (e.g. from 4.0.5 to 4.0.6), then
-only the low-level wrapper needs to be generated for the new version. In
-scripts/generator.jl adapt COPT_VERSION and COPT_HEADERS, and include the file
-into a Julia session. This will create a directory src/genX.Y.Z.
+When only the technical version number changes (e.g. from 6.0.2 to 6.0.3), then
+only the low-level wrapper needs to be generated for the new version. Use:
+
+```julia
+julia> include("scripts/generator.jl")
+julia> Generator.generate_wrapper(VersionNumber(6,0,3))
+```
+
+This will create a directory src/gen6.0.3.
 
 ## Updating to a new major or minor version
 
