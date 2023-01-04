@@ -35,3 +35,14 @@ installer, Artifacts.toml needs to be updated. Use:
 julia> include("scripts/generator.jl")
 julia> Generator.generate_artifacts_toml(VersionNumber(6,0,3))
 ```
+
+## Creating a new release
+
+To create a new release of the Julia interface, which is then automatically
+installed when users run Pkg.add/update, do the following steps:
+- Increase the version number in Project.toml, e.g. from 1.0.7 to 1.0.8, and
+  commit.
+- On github, comment "@JuliaRegistrator register" on that commit. This will open
+  a registration pull request to https://github.com/JuliaRegistries/General.
+  Once the PR is merged (usually after a few minutes), a tag will automatically
+  be created for the commit.
