@@ -7,6 +7,10 @@ It includes high-performance solvers for LP, MIP, SOCP, convex QP/QCP and SDP.
 
 COPT.jl requires Julia version 1.6 or above. Please apply for a free personal COPT license from [COPT application page](https://www.shanshu.ai/copt).
 
+**Notes**<br>
+When COPT is upgraded to a newer version, you may see an error message such as `ERROR: COPT error 4: Unable to create COPT environment`,
+which indicates that you will need to reapply and upgrade your COPT license files as well.
+
 ## Installation
 
 Please install JuMP and COPT Julia interface from Julia with:
