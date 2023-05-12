@@ -32,6 +32,15 @@ include("psd_cone_bridge.jl")
     _UNSET_OBJECTIVE,
 )
 
+@enum(
+    _CallbackState,
+    _CB_NONE,
+    _CB_GENERIC,
+    _CB_LAZY,
+    _CB_USER_CUT,
+    _CB_HEURISTIC
+)
+
 const _SCALAR_SETS = Union{
     MOI.GreaterThan{Float64},
     MOI.LessThan{Float64},
@@ -280,7 +289,16 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
     solve_time::Float64
 
-    conflict::Any # ::Union{Nothing, ConflictRefinerData}
+    # Callback fields
+    callback_variable_primal::Vector{Float64}
+    has_generic_callback::Bool
+    callback_state::_CallbackState
+    lazy_callback::Union{Nothing,Function}
+    user_cut_callback::Union{Nothing,Function}
+    heuristic_callback::Union{Nothing,Function}
+    generic_callback::Any
+
+    conflict::Cint
 
     # For more information on why `pass_names` is necessary, read:
     # https://github.com/jump-dev/CPLEX.jl/issues/392
@@ -306,6 +324,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         model.sos_constraint_info = Dict{Int,_ConstraintInfo}()
         model.indicator_constraint_info =
             Dict{Int,Tuple{_ConstraintInfo,MOI.VectorAffineFunction{Float64}}}()
+        model.callback_variable_primal = Float64[]
         model.certificate = Float64[]
         model.pass_names = false
         MOI.empty!(model)
@@ -399,6 +418,9 @@ mutable struct ConeOptimizer <: MOI.AbstractOptimizer
     # this into consideration.
     pass_names::Bool
 
+    # Workaround, used to silent test errors
+    callback_state::_CallbackState
+
     function ConeOptimizer(env::Union{Nothing,Env} = nothing)
         model = new()
         model.prob = C_NULL
@@ -491,8 +513,15 @@ function MOI.empty!(model::Optimizer)
     empty!(model.certificate)
     model.has_primal_certificate = false
     model.has_dual_certificate = false
+    empty!(model.callback_variable_primal)
+    model.callback_state = _CB_NONE
+    model.has_generic_callback = false
+    model.lazy_callback = nothing
+    model.user_cut_callback = nothing
+    model.heuristic_callback = nothing
+    model.generic_callback = nothing
     model.solve_time = NaN
-    model.conflict = nothing
+    model.conflict = Cint(-1)
     model.variable_primal = nothing
     return
 end
@@ -508,7 +537,12 @@ function MOI.is_empty(model::Optimizer)
     model.name_to_variable !== nothing && return false
     model.name_to_constraint_index !== nothing && return false
     model.ret_optimize !== Cint(0) && return false
-    model.solved_as_mip && return false
+    !isempty(model.callback_variable_primal) && return false
+    model.callback_state != _CB_NONE && return false
+    model.has_generic_callback && return false
+    model.lazy_callback !== nothing && return false
+    model.user_cut_callback !== nothing && return false
+    model.heuristic_callback !== nothing && return false
     return true
 end
 
@@ -519,13 +553,14 @@ function MOI.empty!(model::ConeOptimizer)
     model.solution = nothing
     model.ret_optimize = Cint(0)
     model.solve_time = NaN
+    model.callback_state = _CB_NONE
     return
 end
 
 function MOI.is_empty(model::ConeOptimizer)
     model.name != "" && return false
-    model.cones != nothing && return false
-    model.solution != nothing && return false
+    model.cones !== nothing && return false
+    model.solution !== nothing && return false
     model.ret_optimize !== Cint(0) && return false
     return true
 end
@@ -2793,14 +2828,21 @@ function _has_discrete_variables(model::Optimizer)
     return any(v -> v.type != COPT_CONTINUOUS, values(model.variable_info))
 end
 
+function _check_moi_callback(model::Optimizer)
+    has_moi_callback =
+        model.lazy_callback !== nothing ||
+        model.user_cut_callback !== nothing ||
+        model.heuristic_callback !== nothing
+    if has_moi_callback && model.has_generic_callback
+        error(
+            "Cannot use COPT.CallbackFunction as well as MOI.AbstractCallbackFunction",
+        )
+    end
+    return has_moi_callback
+end
+
 function _optimize!(model)
     if _has_discrete_variables(model)
-        if model.objective_type == _SCALAR_QUADRATIC ||
-           !isempty(model.quadratic_constraint_info)
-            error(
-                "COPT cannot solve QP/QCP/SOCP models with discrete variables",
-            )
-        end
         model.ret_optimize = COPT_Solve(model.prob)
         model.solved_as_mip = true
     else
@@ -2833,6 +2875,14 @@ function MOI.optimize!(model::Optimizer)
     end
     start_time = time()
 
+    # Initialize callbacks for MIP if exist
+    if _has_discrete_variables(model)
+        if _check_moi_callback(model)
+            MOI.set(model, CallbackFunction(), _default_moi_callback(model))
+            model.has_generic_callback = false
+        end
+    end
+
     # Catch [CTRL+C], even when Julia is run from a script not in interactive
     # mode. If `true`, then a script would call `atexit` without throwing the
     # `InterruptException`. `false` is the default in interactive mode.
@@ -2850,7 +2900,11 @@ function MOI.optimize!(model::Optimizer)
     return
 end
 
-function _throw_if_optimize_in_progress(model, attr) end
+function _throw_if_optimize_in_progress(model, attr)
+    if model.callback_state != _CB_NONE
+        throw(MOI.OptimizeInProgress(attr))
+    end
+end
 
 # LP status codes. Descriptions taken from COPT user guide.
 const _RAW_LPSTATUS_STRINGS =
@@ -3804,6 +3858,157 @@ function MOI.get(
     end
 end
 
+function MOI.compute_conflict!(model::Optimizer)
+    ret = COPT_ComputeIIS(model.prob)
+    _check_ret(model, ret)
+
+    if ret == COPT_RETCODE_OK
+        p = Ref{Cint}()
+        ret = COPT_GetIntAttr(model.prob, "HasIIS", p)
+        _check_ret(model, ret)
+        model.conflict = p[]
+    else
+        model.conflict = -1
+    end
+end
+
+function _ensure_conflict_computed(model::Optimizer)
+    if MOI.get(model, ConflictStatus()) == -1
+        error(
+            "Cannot access conflict status. Call " *
+            "`COPT.compute_conflict(model)` first. In case the model " *
+            "is modified, the computed conflict will not be purged.",
+        )
+    end
+    return
+end
+
+function _is_feasible(model::Optimizer)
+    return MOI.get(model, ConflictStatus()) == 0
+end
+
+"""
+    ConflictStatus()
+
+Return the raw status from COPT indicating the status of the last
+computed conflict. It returns an integer:
+
+* `-1` if `compute_conflict!` has not yet been called
+* `0` if no conflict was found
+* `1` if a conflict was found
+"""
+struct ConflictStatus <: MOI.AbstractModelAttribute end
+
+MOI.get(model::Optimizer, ::ConflictStatus) = model.conflict
+
+function MOI.get(model::Optimizer, ::MOI.ConflictStatus)
+    status = MOI.get(model, ConflictStatus())
+    if status == -1
+        return MOI.COMPUTE_CONFLICT_NOT_CALLED
+    elseif status == 0
+        return MOI.NO_CONFLICT_FOUND
+    elseif status == 1
+        return MOI.CONFLICT_FOUND
+    end
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintConflictStatus,
+    index::MOI.ConstraintIndex{MOI.VariableIndex,<:MOI.LessThan},
+)
+    _ensure_conflict_computed(model)
+    if _is_feasible(model)
+        return MOI.NOT_IN_CONFLICT
+    end
+    p = Ref{Cint}()
+    ret =
+        COPT_GetColUpperIIS(model.prob, 1, [Cint(column(model, index) - 1)], p)
+    _check_ret(model, ret)
+    return p[] > 0 ? MOI.IN_CONFLICT : MOI.NOT_IN_CONFLICT
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintConflictStatus,
+    index::MOI.ConstraintIndex{MOI.VariableIndex,<:MOI.GreaterThan},
+)
+    _ensure_conflict_computed(model)
+    if _is_feasible(model)
+        return MOI.NOT_IN_CONFLICT
+    end
+    p = Ref{Cint}()
+    ret =
+        COPT_GetColLowerIIS(model.prob, 1, [Cint(column(model, index) - 1)], p)
+    _check_ret(model, ret)
+    return p[] > 0 ? MOI.IN_CONFLICT : MOI.NOT_IN_CONFLICT
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintConflictStatus,
+    index::MOI.ConstraintIndex{
+        MOI.VariableIndex,
+        <:Union{MOI.EqualTo,MOI.Interval},
+    },
+)
+    _ensure_conflict_computed(model)
+    if _is_feasible(model)
+        return MOI.NOT_IN_CONFLICT
+    end
+    p = Ref{Cint}()
+    ret =
+        COPT_GetColLowerIIS(model.prob, 1, [Cint(column(model, index) - 1)], p)
+    _check_ret(model, ret)
+    if p[] > 0
+        return MOI.IN_CONFLICT
+    end
+    ret =
+        COPT_GetColUpperIIS(model.prob, 1, [Cint(column(model, index) - 1)], p)
+    _check_ret(model, ret)
+    if p[] > 0
+        return MOI.IN_CONFLICT
+    end
+    return MOI.NOT_IN_CONFLICT
+end
+
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintConflictStatus,
+    index::MOI.ConstraintIndex{
+        MOI.ScalarAffineFunction{Float64},
+        <:_SCALAR_SETS,
+    },
+)
+    _ensure_conflict_computed(model)
+    if _is_feasible(model)
+        return MOI.NOT_IN_CONFLICT
+    end
+    p = Ref{Cint}()
+    ret = COPT_GetRowLowerIIS(
+        model.prob,
+        1,
+        [Cint(_info(model, index).row - 1)],
+        p,
+    )
+    _check_ret(model, ret)
+    if p[] > 0
+        return MOI.IN_CONFLICT
+    end
+    p = Ref{Cint}()
+    ret = COPT_GetRowUpperIIS(
+        model.prob,
+        1,
+        [Cint(_info(model, index).row - 1)],
+        p,
+    )
+    _check_ret(model, ret)
+    if p[] > 0
+        return MOI.IN_CONFLICT
+    end
+    return MOI.NOT_IN_CONFLICT
+end
+
 ###
 ### Optimize methods for ConeOptimizer.
 ###
@@ -4145,7 +4350,7 @@ function MOI.get(
 end
 
 function _check_solution_available(model::ConeOptimizer)
-    if model.solution == nothing
+    if model.solution === nothing
         error("No solution available")
     end
 end

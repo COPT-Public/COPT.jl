@@ -101,6 +101,7 @@ end
 
 include("MOI/MOI_wrapper.jl")
 include("MOI/indicator_constraint.jl")
+include("MOI/callback.jl")
 
 # COPT exports all `COPT_xxx` and `copt_xxx` symbols. If you don't want all of
 # these symbols in your environment, then use `import COPT` instead of
