@@ -61,6 +61,14 @@ Note: before accessing `MOI.CallbackVariablePrimal`, you must call
 struct CallbackFunction <: MOI.AbstractCallback end
 
 function MOI.set(model::Optimizer, ::CallbackFunction, f::Function)
+    if MOI.get(model, MOI.NumberOfThreads()) != 1
+        @warn(
+            "When using callbacks, make sure to set `NumberOfThreads` to `1` " *
+            "using `MOI.set(model, MOI.NumberOfThreads(), 1)`. Bad things can" *
+            " happen if you don't! Only ignore this message if you know what " *
+            "you are doing."
+        )
+    end
     copt_callback = @cfunction(
         _copt_callback_wrapper,
         Cint,
@@ -129,6 +137,13 @@ end
 # ==============================================================================
 
 function _default_moi_callback(model::Optimizer)
+    if MOI.get(model, MOI.NumberOfThreads()) != 1
+        # The current callback system isn't thread-safe. As a work-around, set
+        # the number of threads to 1, regardless of what the user intended.
+        # We only do this for the MOI callbacks, since we assume the user knows
+        # what they are doing if they use a solver-dependent callback.
+        MOI.set(model, MOI.NumberOfThreads(), 1)
+    end
     return (cb_data, cb_context) -> begin
         if cb_context == COPT_CBCONTEXT_MIPSOL
             load_callback_variable_primal(cb_data, cb_context)

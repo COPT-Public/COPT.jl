@@ -2842,11 +2842,6 @@ function _check_moi_callback(model::Optimizer)
 end
 
 function _optimize!(model)
-    if _check_moi_callback(model) || model.has_generic_callback
-        println("Callback detected, set 'Threads' to '1' for thread safety")
-        MOI.set(model, MOI.RawOptimizerAttribute("Threads"), 1)
-    end
-
     if _has_discrete_variables(model)
         model.ret_optimize = COPT_Solve(model.prob)
         model.solved_as_mip = true
