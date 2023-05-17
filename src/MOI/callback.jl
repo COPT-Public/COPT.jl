@@ -296,9 +296,6 @@ function MOI.submit(
     objP = Ref{Cdouble}()
     ret = COPT_AddCallbackSolution(cb.callback_data, solution, objP)
     _check_ret(model, ret)
-    if objP[] < COPT_INFINITY
-        return MOI.HEURISTIC_SOLUTION_ACCEPTED
-    end
     return MOI.HEURISTIC_SOLUTION_UNKNOWN
 end
 MOI.supports(::Optimizer, ::MOI.HeuristicSolution{CallbackData}) = true

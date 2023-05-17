@@ -67,78 +67,78 @@ function callback_knapsack_model()
     return model, x, item_weights
 end
 
-# function test_lazy_constraint_callback()
-#     model, x, y = callback_simple_model()
-#     lazy_called = false
-#     MOI.set(
-#         model,
-#         MOI.LazyConstraintCallback(),
-#         cb_data -> begin
-#             lazy_called = true
-#             x_val = MOI.get(model, MOI.CallbackVariablePrimal(cb_data), x)
-#             y_val = MOI.get(model, MOI.CallbackVariablePrimal(cb_data), y)
-#             status = MOI.get(
-#                 model,
-#                 MOI.CallbackNodeStatus(cb_data),
-#             )::MOI.CallbackNodeStatusCode
-#             int_sol = round.(Int, [x_val, y_val])
-#             if status == MOI.CALLBACK_NODE_STATUS_INTEGER
-#                 @test isapprox(int_sol, [x_val, y_val], atol = 1e-6)
-#             end
-#             @test MOI.supports(model, MOI.LazyConstraint(cb_data))
-#             if y_val - x_val > 1 + 1e-6
-#                 @test MOI.submit(
-#                     model,
-#                     MOI.LazyConstraint(cb_data),
-#                     MOI.ScalarAffineFunction{Float64}(
-#                         MOI.ScalarAffineTerm.([-1.0, 1.0], [x, y]),
-#                         0.0,
-#                     ),
-#                     MOI.LessThan{Float64}(1.0),
-#                 ) === nothing
-#             elseif y_val + x_val > 3 + 1e-6
-#                 @test MOI.submit(
-#                     model,
-#                     MOI.LazyConstraint(cb_data),
-#                     MOI.ScalarAffineFunction{Float64}(
-#                         MOI.ScalarAffineTerm.([1.0, 1.0], [x, y]),
-#                         0.0,
-#                     ),
-#                     MOI.LessThan{Float64}(3.0),
-#                 ) === nothing
-#             end
-#         end,
-#     )
-#     @test MOI.supports(model, MOI.LazyConstraintCallback())
-#     MOI.optimize!(model)
-#     @test lazy_called
-#     @test MOI.get(model, MOI.VariablePrimal(), x) == 1
-#     @test MOI.get(model, MOI.VariablePrimal(), y) == 2
-# end
+function test_lazy_constraint_callback()
+    model, x, y = callback_simple_model()
+    lazy_called = false
+    MOI.set(
+        model,
+        MOI.LazyConstraintCallback(),
+        cb_data -> begin
+            lazy_called = true
+            x_val = MOI.get(model, MOI.CallbackVariablePrimal(cb_data), x)
+            y_val = MOI.get(model, MOI.CallbackVariablePrimal(cb_data), y)
+            status = MOI.get(
+                model,
+                MOI.CallbackNodeStatus(cb_data),
+            )::MOI.CallbackNodeStatusCode
+            int_sol = round.(Int, [x_val, y_val])
+            if status == MOI.CALLBACK_NODE_STATUS_INTEGER
+                @test isapprox(int_sol, [x_val, y_val], atol = 1e-6)
+            end
+            @test MOI.supports(model, MOI.LazyConstraint(cb_data))
+            if y_val - x_val > 1 + 1e-6
+                @test MOI.submit(
+                    model,
+                    MOI.LazyConstraint(cb_data),
+                    MOI.ScalarAffineFunction{Float64}(
+                        MOI.ScalarAffineTerm.([-1.0, 1.0], [x, y]),
+                        0.0,
+                    ),
+                    MOI.LessThan{Float64}(1.0),
+                ) === nothing
+            elseif y_val + x_val > 3 + 1e-6
+                @test MOI.submit(
+                    model,
+                    MOI.LazyConstraint(cb_data),
+                    MOI.ScalarAffineFunction{Float64}(
+                        MOI.ScalarAffineTerm.([1.0, 1.0], [x, y]),
+                        0.0,
+                    ),
+                    MOI.LessThan{Float64}(3.0),
+                ) === nothing
+            end
+        end,
+    )
+    @test MOI.supports(model, MOI.LazyConstraintCallback())
+    MOI.optimize!(model)
+    @test lazy_called
+    @test MOI.get(model, MOI.VariablePrimal(), x) == 1
+    @test MOI.get(model, MOI.VariablePrimal(), y) == 2
+end
 
-# function test_lazy_constraint_callback_fractional()
-#     model, x, item_weights = callback_knapsack_model()
-#     lazy_called_integer = false
-#     lazy_called_fractional = false
-#     MOI.set(
-#         model,
-#         MOI.LazyConstraintCallback(),
-#         cb_data -> begin
-#             status = MOI.get(
-#                 model,
-#                 MOI.CallbackNodeStatus(cb_data),
-#             )::MOI.CallbackNodeStatusCode
-#             if status == MOI.CALLBACK_NODE_STATUS_INTEGER
-#                 lazy_called_integer = true
-#             elseif status == MOI.CALLBACK_NODE_STATUS_FRACTIONAL
-#                 lazy_called_fractional = true
-#             end
-#         end,
-#     )
-#     @test MOI.supports(model, MOI.LazyConstraintCallback())
-#     MOI.optimize!(model)
-#     @test lazy_called_integer || lazy_called_fractional
-# end
+function test_lazy_constraint_callback_fractional()
+    model, x, item_weights = callback_knapsack_model()
+    lazy_called_integer = false
+    lazy_called_fractional = false
+    MOI.set(
+        model,
+        MOI.LazyConstraintCallback(),
+        cb_data -> begin
+            status = MOI.get(
+                model,
+                MOI.CallbackNodeStatus(cb_data),
+            )::MOI.CallbackNodeStatusCode
+            if status == MOI.CALLBACK_NODE_STATUS_INTEGER
+                lazy_called_integer = true
+            elseif status == MOI.CALLBACK_NODE_STATUS_FRACTIONAL
+                lazy_called_fractional = true
+            end
+        end,
+    )
+    @test MOI.supports(model, MOI.LazyConstraintCallback())
+    MOI.optimize!(model)
+    @test lazy_called_integer || lazy_called_fractional
+end
 
 function test_lazy_constraint_callback_OptimizeInProgress()
     model, x, y = callback_simple_model()
@@ -279,46 +279,34 @@ end
 #     )
 # end
 
-# function test_heuristic_callback()
-#     model, x, item_weights = callback_knapsack_model()
-#     solution_accepted = false
-#     solution_rejected = false
-#     MOI.set(
-#         model,
-#         MOI.HeuristicCallback(),
-#         cb_data -> begin
-#             x_vals = MOI.get.(model, MOI.CallbackVariablePrimal(cb_data), x)
-#             @test MOI.supports(model, MOI.HeuristicSolution(cb_data))
-#             status = MOI.get(
-#                 model,
-#                 MOI.CallbackNodeStatus(cb_data),
-#             )::MOI.CallbackNodeStatusCode
-#             int_sol = round.(Int, x_vals)
-#             if status == MOI.CALLBACK_NODE_STATUS_INTEGER
-#                 @test isapprox(int_sol, x_vals, atol = 1e-6)
-#             end
-#             if MOI.submit(
-#                 model,
-#                 MOI.HeuristicSolution(cb_data),
-#                 x,
-#                 floor.(x_vals),
-#             ) == MOI.HEURISTIC_SOLUTION_ACCEPTED
-#                 solution_accepted = true
-#             end
-#             if MOI.submit(
-#                 model,
-#                 MOI.HeuristicSolution(cb_data),
-#                 x,
-#                 ceil.(x_vals),
-#             ) == MOI.HEURISTIC_SOLUTION_REJECTED
-#                 solution_rejected = true
-#             end
-#         end,
-#     )
-#     @test MOI.supports(model, MOI.HeuristicCallback())
-#     MOI.optimize!(model)
-#     @test solution_accepted || solution_rejected
-# end
+function test_heuristic_callback()
+    model, x, item_weights = callback_knapsack_model()
+    MOI.set(
+        model,
+        MOI.HeuristicCallback(),
+        cb_data -> begin
+            x_vals = MOI.get.(model, MOI.CallbackVariablePrimal(cb_data), x)
+            @test MOI.supports(model, MOI.HeuristicSolution(cb_data))
+            status = MOI.get(
+                model,
+                MOI.CallbackNodeStatus(cb_data),
+            )::MOI.CallbackNodeStatusCode
+            int_sol = round.(Int, x_vals)
+            if status == MOI.CALLBACK_NODE_STATUS_INTEGER
+                @test isapprox(int_sol, x_vals, atol = 1e-6)
+            end
+            MOI.submit(
+                model,
+                MOI.HeuristicSolution(cb_data),
+                x,
+                floor.(x_vals),
+            )
+            MOI.submit(model, MOI.HeuristicSolution(cb_data), x, ceil.(x_vals))
+        end,
+    )
+    @test MOI.supports(model, MOI.HeuristicCallback())
+    return MOI.optimize!(model)
+end
 
 function test_heuristic_callback_LazyConstraint()
     model, x, item_weights = callback_knapsack_model()
@@ -468,80 +456,64 @@ end
 #     @test COPT.COPT_CBCONTEXT_MIPRELAX in cb_calls
 # end
 
-# function test_CallbackFunction_callback_HeuristicSolution()
-#     model, x, item_weights = callback_knapsack_model()
-#     solution_accepted = false
-#     solution_rejected = false
-#     solution_unknown = false
-#     cb_calls = Int32[]
-#     MOI.set(
-#         model,
-#         COPT.CallbackFunction(),
-#         (cb_data, cb_context) -> begin
-#             push!(cb_calls, cb_context)
-#             if cb_context != COPT.COPT_CBCONTEXT_MIPRELAX
-#                 return
-#             end
-#             COPT.load_callback_variable_primal(cb_data, cb_context)
-#             x_vals =
-#                 MOI.get.(model, MOI.CallbackVariablePrimal(cb_data), x)
-#             if MOI.submit(
-#                 model,
-#                 MOI.HeuristicSolution(cb_data),
-#                 x,
-#                 floor.(x_vals),
-#             ) == MOI.HEURISTIC_SOLUTION_ACCEPTED
-#                 solution_accepted = true
-#             end
-#             if MOI.submit(
-#                 model,
-#                 MOI.HeuristicSolution(cb_data),
-#                 x,
-#                 ceil.(x_vals),
-#             ) == MOI.HEURISTIC_SOLUTION_REJECTED
-#                 solution_rejected = true
-#             end
-#         end,
-#     )
-#     MOI.optimize!(model)
-#     @test solution_accepted || solution_rejected || solution_unknown
-# end
+function test_CallbackFunction_callback_HeuristicSolution()
+    model, x, item_weights = callback_knapsack_model()
+    cb_calls = Int32[]
+    MOI.set(
+        model,
+        COPT.CallbackFunction(),
+        (cb_data, cb_context) -> begin
+            push!(cb_calls, cb_context)
+            COPT.load_callback_variable_primal(cb_data, cb_context)
+            x_vals =
+                MOI.get.(model, MOI.CallbackVariablePrimal(cb_data), x)
+            MOI.submit(
+                model,
+                MOI.HeuristicSolution(cb_data),
+                x,
+                floor.(x_vals),
+            )
+        end,
+    )
+    MOI.optimize!(model)
+    @test COPT.COPT_CBCONTEXT_MIPSOL in cb_calls
+end
 
-# function test_CallbackFunction_CallbackNodeStatus()
-#     model, x, item_weights = callback_knapsack_model()
-#     unknown_reached = false
-#     MOI.set(
-#         model,
-#         COPT.CallbackFunction(),
-#         (cb_data, cb_context) -> begin
-#             if MOI.get(model, MOI.CallbackNodeStatus(cb_data)) ==
-#                MOI.CALLBACK_NODE_STATUS_UNKNOWN
-#                 unknown_reached = true
-#             end
-#         end,
-#     )
-#     MOI.optimize!(model)
-#     @test unknown_reached
-# end
+function test_CallbackFunction_CallbackNodeStatus()
+    model, x, item_weights = callback_knapsack_model()
+    unknown_reached = false
+    MOI.set(
+        model,
+        COPT.CallbackFunction(),
+        (cb_data, cb_context) -> begin
+            if MOI.get(model, MOI.CallbackNodeStatus(cb_data)) ==
+               MOI.CALLBACK_NODE_STATUS_UNKNOWN
+                unknown_reached = true
+            end
+        end,
+    )
+    MOI.optimize!(model)
+    @test !unknown_reached
+end
 
-# function test_CallbackFunction_broadcast()
-#     model, x, _ = callback_knapsack_model()
-#     f(cb_data, x) = MOI.get(model, MOI.CallbackVariablePrimal(cb_data), x)
-#     solutions = Vector{Float64}[]
-#     MOI.set(
-#         model,
-#         COPT.CallbackFunction(),
-#         (cb_data, cb_context) -> begin
-#             if cb_context == COPT.COPT_CBCONTEXT_MIPSOL
-#                 COPT.load_callback_variable_primal(cb_data, cb_context)
-#                 push!(solutions, f(cb_data, x))
-#             end
-#         end,
-#     )
-#     MOI.optimize!(model)
-#     @test length(solutions) > 0
-#     @test length(solutions[1]) == length(x)
-# end
+function test_CallbackFunction_broadcast()
+    model, x, _ = callback_knapsack_model()
+    f(cb_data, x) = MOI.get(model, MOI.CallbackVariablePrimal(cb_data), x)
+    solutions = Vector{Float64}[]
+    MOI.set(
+        model,
+        COPT.CallbackFunction(),
+        (cb_data, cb_context) -> begin
+            if cb_context == COPT.COPT_CBCONTEXT_MIPSOL
+                COPT.load_callback_variable_primal(cb_data, cb_context)
+                push!(solutions, f(cb_data, x))
+            end
+        end,
+    )
+    MOI.optimize!(model)
+    @test length(solutions) > 0
+    @test length(solutions[1]) == length(x)
+end
 
 end  # module TestCallback
 
