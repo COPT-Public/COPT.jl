@@ -22,7 +22,7 @@ else
     # never get executed.
     @static if Sys.islinux() || Sys.isapple() || Sys.iswindows()
         # No local installation defined in deps.jl. Use the artifact instead.
-        coptdir = "copt60"
+        coptdir = "copt65"
         libdir = Sys.iswindows() ? "bin" : "lib"
         prefix = Sys.iswindows() ? "" : "lib"
         libname = prefix * "copt." * Libdl.dlext
@@ -101,6 +101,7 @@ end
 
 include("MOI/MOI_wrapper.jl")
 include("MOI/indicator_constraint.jl")
+include("MOI/callback.jl")
 
 # COPT exports all `COPT_xxx` and `copt_xxx` symbols. If you don't want all of
 # these symbols in your environment, then use `import COPT` instead of

@@ -50,7 +50,16 @@ function test_runtests()
             ],
         ),
         exclude = String[
-        # Expected test failures:
+            # exclude tests trigger failures with COPT 6.5.x (until 6.5.3):
+            "test_conic_HermitianPositiveSemidefiniteConeTriangle_2",
+            "test_conic_PositiveSemidefiniteConeSquare_VectorAffineFunction_2",
+            "test_conic_PositiveSemidefiniteConeSquare_VectorOfVariables_2",
+            "test_conic_PositiveSemidefiniteConeTriangle_VectorAffineFunction_2",
+            "test_conic_PositiveSemidefiniteConeTriangle_VectorOfVariables_2",
+            "test_conic_RootDetConeSquare",
+            "test_conic_RootDetConeTriangle",
+            "test_conic_RootDetConeTriangle_VectorAffineFunction",
+            "test_conic_RootDetConeTriangle_VectorOfVariables",
         ],
     )
     return

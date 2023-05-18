@@ -37,14 +37,17 @@ function test_runtests()
             "test_linear_Indicator_ON_ZERO",
             "test_linear_Indicator_constant_term",
             "test_linear_Indicator_integration",
+            # exclude tests that trigger bugs in COPT 6.5.x
+            "test_linear_Semiinteger_integration",
+            "test_linear_Semicontinuous_integration",
+            # IIS is not available for feasible model
+            "test_solve_conflict_feasible",
             # TODO(odow): new tests
             "test_unbounded_",
             "test_infeasible_",
             # COPT does not support nonconvex QCPs
             "test_quadratic_nonconvex_",
             "test_conic_SecondOrderCone_negative_post_bound_3",
-            # COPT does not support QP/QCP/SOCP with discrete variables
-            "test_quadratic_Integer_SecondOrderCone",
             # COPT does not support quadratic constraints with empty Q matrix
             "test_basic_VectorQuadraticFunction_GeometricMeanCone",
             # COPT does not provide dual solution for quadratic constraints
