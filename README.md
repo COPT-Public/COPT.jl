@@ -1,37 +1,50 @@
-# Using Julia interface for COPT (Cardinal Optimizer)
+# COPT.jl
 
-COPT (Cardinal Optimizer) is a mathematical optimization solver for large-scale optimization problems.
-It includes high-performance solvers for LP, MIP, SOCP, convex QP/QCP and SDP.
+[COPT.jl](https://github.com/COPT-Public/COPT.jl) is a wrapper for the
+[COPT (Cardinal Optimizer)](https://www.shanshu.ai/copt), a mathematical
+optimization solver for large-scale optimization problems.
 
-## Prerequisite
+COPT includes high-performance solvers for LP, MIP, SOCP, convex QP/QCP and SDP.
 
-COPT.jl requires Julia version 1.6 or above. Please apply for a free personal COPT license from [COPT application page](https://www.shanshu.ai/copt).
+## License
 
-**Notes**<br>
-When COPT is upgraded to a newer version, you may see an error message such as `ERROR: COPT error 4: Unable to create COPT environment`,
-which indicates that you will need to reapply and upgrade your COPT license files as well.
+COPT.jl is licensed under the [MIT license](https://github.com/COPT-Public/COPT.jl/blob/main/LICENSE).
+
+The underlying solver is a closed-source commercial product for which you must
+[obtain a license](https://www.shanshu.ai/copt).
+
+### Note
+
+When COPT is upgraded to a newer version, you may see an error message such as
+`ERROR: COPT error 4: Unable to create COPT environment`, which indicates that
+you will need to reapply and upgrade your COPT license files as well.
 
 ## Installation
 
-Please install JuMP and COPT Julia interface from Julia with:
+Install COPT using the Julia package manager
 
 ```julia
 import Pkg
-Pkg.add("JuMP")
 Pkg.add("COPT")
 ```
 
-When there is no COPT installed,
-installing the COPT Julia interface will automatically download the necessary solver binaries.
-Without a license, you can solve small models for non-commercial purpose.
-We strongly recommend that you apply for a license by following the link above.
+When there is no local version of COPT installed, installing COPT.jl will
+automatically download the necessary solver binaries.
 
-**Notes**<br>
-**MacOS Apple M1/ARM:** on MacOS with Apple M1 chips, Intel based programs can run via *Rosetta*. When you installed the COPT binaries manually, then please make sure that the *COPT build* matches the *Julia build*. We recommend the Intel based COPT and Julia build, as the Apple M1/ARM build of Julia is experimental.
+Without a license, you can solve small models for non-commercial purpose. We
+strongly recommend that you apply for a license by following the link above.
 
-## Quick check
+### Note
 
-When the installation is done, you should be able to build and solve an LP problem with:
+**MacOS Apple M1/ARM:** on MacOS with Apple M1 chips, Intel based programs can
+run via *Rosetta*. When you installed the COPT binaries manually, then please
+make sure that the *COPT build* matches the *Julia build*. We recommend the
+Intel based COPT and Julia build, as the Apple M1/ARM build of Julia is
+experimental.
+
+## Use with JuMP
+
+To use COPT with JuMP, use `COPT.Optimizer`:
 
 ```julia
 using JuMP
@@ -54,8 +67,8 @@ optimize!(model)
 @show shadow_price(c2)
 ```
 
-For solving SDP problems, you need to use `COPT.ConeOptimizer` in place of
-`COPT.Optimizer`:
+To use the semidefinite programming solver in COPT with JuMP, use
+`COPT.ConeOptimizer`:
 
 ```julia
 using JuMP
@@ -77,7 +90,3 @@ optimize!(model)
 @show shadow_price(c1)
 @show shadow_price(c2)
 ```
-
-Please refer to [Getting started with JuMP](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_JuMP/) 
-for a quick introduction to writing and solving optimization models with JuMP.
-The model above is adapted from the introduction page.
