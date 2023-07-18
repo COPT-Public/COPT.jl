@@ -73,6 +73,7 @@ To use the semidefinite programming solver in COPT with JuMP, use
 ```julia
 using JuMP
 using COPT
+using LinearAlgebra
 model = Model(COPT.ConeOptimizer)
 C = [1.0 -1.0; -1.0 2.0]
 @variable(model, X[1:2, 1:2], PSD)

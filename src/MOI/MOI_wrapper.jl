@@ -948,7 +948,12 @@ function MOI.set(
         ret = COPT_SetIntParam(model.prob, param.name, value)
         _check_ret(model, ret)
     else
-        throw(MOI.UnsupportedAttribute(param))
+        if lowercase(param.name) == "logfile" 
+            ret = COPT_SetLogFile(model.prob, value)
+            _check_ret(model, ret)
+        else
+            throw(MOI.UnsupportedAttribute(param))
+        end
     end
 end
 
