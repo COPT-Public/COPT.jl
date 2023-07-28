@@ -1,50 +1,50 @@
 [[copt]]
 arch = "aarch64"
 os = "linux"
-git-tree-sha1 = "7cb7d3ef762fab7abc169c041f354d9b9f43cf52"
+git-tree-sha1 = "1d102ec64c454389f342fe8963160e2712f64818"
 lazy = true
 
     [[copt.download]]
-    url = "https://pub.shanshu.ai/download/copt/6.5.6/aarch64/CardinalOptimizer-6.5.6-aarch64_lnx.tar.gz"
-    sha256 = "94323e7fab344b580e1df811d0cea7278adb518585f216676a91e58985ab73dc"
+    url = "https://pub.shanshu.ai/download/copt/6.5.7/aarch64/CardinalOptimizer-6.5.7-aarch64_lnx.tar.gz"
+    sha256 = "ae5c7135153403e9a45ef07c92a9c9247b6a7b8c56d5dd1b6b3a3c003c5b6e8e"
 
 [[copt]]
 arch = "aarch64"
 os = "macos"
-git-tree-sha1 = "4dca1c892f5f2bf6c61ccd546c96b2266b74308b"
+git-tree-sha1 = "1b5c35183f10640102cf00c564e127f8a3910a70"
 lazy = true
 
     [[copt.download]]
-    url = "https://pub.shanshu.ai/download/copt/6.5.6/aarch64/CardinalOptimizer-6.5.6-aarch64_mac.tar.gz"
-    sha256 = "e4bca59f0f576a33f64c32d4302e71340e388af693380408a707281856ebfc6a"
+    url = "https://pub.shanshu.ai/download/copt/6.5.7/aarch64/CardinalOptimizer-6.5.7-aarch64_mac.tar.gz"
+    sha256 = "eb3d54e18149b3dbe4ecf73a22e05d3d1bb89e1bfaed562eb2f68f30c51ba61a"
 
 [[copt]]
 arch = "x86_64"
 os = "linux"
-git-tree-sha1 = "10164aee91880d0867e258ab094550b65e20a5b6"
+git-tree-sha1 = "bb3348b4ced5384ee07e387189dbb67e0d381e5c"
 lazy = true
 
     [[copt.download]]
-    url = "https://pub.shanshu.ai/download/copt/6.5.6/linux64/CardinalOptimizer-6.5.6-lnx64.tar.gz"
-    sha256 = "7db061a2ea0a9edbf85738c37801c1ff32f433fe26fb0319400f5ee984085bf1"
+    url = "https://pub.shanshu.ai/download/copt/6.5.7/linux64/CardinalOptimizer-6.5.7-lnx64.tar.gz"
+    sha256 = "a70257a1eb0764c8e0ba6f5f4cf3aebc63d1fdb27f4a46ef6819677289ded85d"
 
 [[copt]]
 arch = "x86_64"
 os = "macos"
-git-tree-sha1 = "d32c4c0eb48f2060600d78f633afe67924421f70"
+git-tree-sha1 = "c566309caf15e43a109df458bd97fcd72b43382a"
 lazy = true
 
     [[copt.download]]
-    url = "https://pub.shanshu.ai/download/copt/6.5.6/osx64/CardinalOptimizer-6.5.6-osx64.tar.gz"
-    sha256 = "5ea5a7a01cdc340400a37bf15a5b8906cf44830d1e1276c3b091341a4fa4530a"
+    url = "https://pub.shanshu.ai/download/copt/6.5.7/osx64/CardinalOptimizer-6.5.7-osx64.tar.gz"
+    sha256 = "60916b512db714c330034e5c306925e28f86380b3bc1e3d60b6dc3b8bbda7003"
 
 [[copt]]
 arch = "x86_64"
 os = "windows"
-git-tree-sha1 = "7f947f86ee2b23eb7641df906754bfcf444c8d18"
+git-tree-sha1 = "735c0c863d56de69d84c0d7c19a6c01543735cbe"
 lazy = true
 
     [[copt.download]]
-    url = "https://pub.shanshu.ai/download/copt/6.5.6/win64/CardinalOptimizer-6.5.6-win64.tar.gz"
-    sha256 = "147be1d6d2dfcad035354619298b4a964a6018c415a06c3e547809072fff96ab"
+    url = "https://pub.shanshu.ai/download/copt/6.5.7/win64/CardinalOptimizer-6.5.7-win64.tar.gz"
+    sha256 = "8934b403958151c449113c7b4bcba8e202a5e864ac49e106ae191c96de61b4a3"
 
