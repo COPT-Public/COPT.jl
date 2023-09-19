@@ -489,11 +489,6 @@ function _reset_prob!(model::Union{Optimizer,ConeOptimizer})
         _check_ret(model.env, ret)
         model.prob = p_ptr[]
         model.env.attached_models += 1
-        if model.silent
-            MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 0)
-        else
-            MOI.set(model, MOI.RawOptimizerAttribute("LogToConsole"), 1)
-        end
     end
 end
 
@@ -948,7 +943,7 @@ function MOI.set(
         ret = COPT_SetIntParam(model.prob, param.name, value)
         _check_ret(model, ret)
     else
-        if lowercase(param.name) == "logfile" 
+        if lowercase(param.name) == "logfile"
             ret = COPT_SetLogFile(model.prob, value)
             _check_ret(model, ret)
         else
