@@ -17,15 +17,15 @@ function get_pkg_url(
             "https://pub.shanshu.ai/download/copt/$(version)/aarch64",
         ),
         ("aarch64", "macos") => (
-            "CardinalOptimizer-$(version)-aarch64_mac.tar.gz",
-            "https://pub.shanshu.ai/download/copt/$(version)/aarch64",
+            "CardinalOptimizer-$(version)-universal_mac.tar.gz",
+            "https://pub.shanshu.ai/download/copt/$(version)/osx64",
         ),
         ("x86_64", "linux") => (
             "CardinalOptimizer-$(version)-lnx64.tar.gz",
             "https://pub.shanshu.ai/download/copt/$(version)/linux64",
         ),
         ("x86_64", "macos") => (
-            "CardinalOptimizer-$(version)-osx64.tar.gz",
+            "CardinalOptimizer-$(version)-universal_mac.tar.gz",
             "https://pub.shanshu.ai/download/copt/$(version)/osx64",
         ),
         ("x86_64", "windows") => (
