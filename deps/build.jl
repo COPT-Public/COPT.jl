@@ -16,6 +16,7 @@ const _COPT_VERS = [ # From oldest to most recent.
     "50",
     "60",
     "65",
+    "70",
 ]
 const _COPT_HOME_ENV = "COPT_HOME"
 
@@ -54,6 +55,7 @@ function get_error_message_if_not_found()
     * 5.0
     * 6.0
     * 6.5
+    * 7.0
 
     You must download and install one of these versions separately.
 
@@ -62,7 +64,7 @@ function get_error_message_if_not_found()
     location):
 
     ```
-    ENV["COPT_HOME"] = "$(default_installation_path("copt65"))"
+    ENV["COPT_HOME"] = "$(default_installation_path("copt70"))"
     import Pkg
     Pkg.add("COPT")
     Pkg.build("COPT")

@@ -33,7 +33,7 @@ installer, Artifacts.toml needs to be updated. Use:
 
 ```julia
 julia> include("scripts/generator.jl")
-julia> Generator.generate_artifacts_toml(VersionNumber(6,0,3))
+julia> Generator.generate_artifacts_toml(VersionNumber(7,0,2))
 ```
 
 ## Creating a new release
