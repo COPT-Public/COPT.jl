@@ -71,6 +71,9 @@ function test_runtests()
             "test_quadratic_constraint_basic",
             "test_quadratic_constraint_integration",
             "test_quadratic_constraint_minimize",
+            # New tests for function modifcation, https://github.com/jump-dev/MathOptInterface.jl/pull/2328
+            "test_basic_VectorAffineFunction_Indicator_LessThan",
+            "test_basic_VectorAffineFunction_Indicator_GreaterThan",
         ],
     )
     return
