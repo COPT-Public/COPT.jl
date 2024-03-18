@@ -91,3 +91,23 @@ optimize!(model)
 @show shadow_price(c1)
 @show shadow_price(c2)
 ```
+
+## Options
+TimeLimit (seconds)
+- Type: double
+- Range: [0, inf]
+- Default: 
+
+LogFile
+- Type: string
+- Default:
+
+LogToConsole
+- Type: bool
+- Default:
+
+Threads
+- Type: integer
+- Default:
+
+- Default:
