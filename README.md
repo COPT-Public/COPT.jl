@@ -93,6 +93,7 @@ optimize!(model)
 ```
 
 ## Options
+All options are in line with user guide of version 7.1.1.
 ### Limits and tolerance
 TimeLimit (seconds)
 - Type: double
@@ -148,29 +149,378 @@ AbsGap
 Presolve
 - Type: integer
 - Range:
-- 
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+  - 4: no limit utill no improvement
 - Default: -1
 
 Scaling
 - Type: integer
 - Range:
+  - -1: automatic
+  - 0: off
+  - 1: on
 - Default: -1
 
 Dualize
 - Type: integer
 - Range:
+  - -1: automatic
+  - 0: off
+  - 1: on
 - Default: -1
+
+### LP related
+LpMethod
+- Type: integer
+- Range:
+  - -1: automatic
+  - 1: dual simplex
+  - 2: interior
+  - 3: crossover
+  - 4: parallel (simplex & interior)
+  - 5: simplex or interior
+  - 6: PDLP
+- Default: -1
+
+DualPrice
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: Devex algorithm
+  - 1: Steepest edge algorithm
+- Default: -1
+
+DualPerturb
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: no perturbation
+  - 1: allow perturbation
+- Default: -1
+
+BarHomogeneous
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: on
+- Default: -1
+
+BarOrder
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: Approximate Minimum Degree（AMD）algorithm
+  - 1: Nested Dissection（ND）algorithm
+- Default: -1
+
+BarStart
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: Simple algorithm
+  - 1: Mehrotra algorithm
+  - 2: Modified Mehrotra algorithm
+- Default: -1
+
+Crossover
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: on
+- Default: -1
+
+ReqFarkasRay
+- Type: integer
+- Range:
+  - 0: off
+  - 1: on
+- Default: 0
+
+### MIP related
+CutLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+RootCutLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+TreeCutLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+RootCutRounds
+- Type: integer
+- Range: [-1, INT_MAX]
+- Default: -1 (automatic)
+
+NodeCutRounds
+- Type: integer
+- Range: [-1, INT_MAX]
+- Default: -1 (automatic)
+
+HeurLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+RoundingHeurLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+DivingHeurLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+SubMipHeurLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+FAPHeurLevel
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+StrongBranching
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: light and fast
+  - 2: normal
+  - 3: aggressive
+- Default: -1
+
+ConflictAnalysis
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: on
+- Default: -1
+
+MipStartMode
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: complete and feasible solution
+  - 2: feasible solution
+- Default: -1
+
+MipStartNodeLimit
+- Type: integer
+- Range: [-1, INT_MAX]
+- Default: -1 (automatic)
+
+### SDP related
+SDPMethod
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: primal-dual interior algorithm
+  - 1: alternating direction method of multipliers algorithm
+  - 2: dual interior algorithm
+- Default: -1
+
+### IIS related
+IISMethod
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: quality first
+  - 1: efficiency first
+- Default: -1
+
+### Feasibility relaxation related
+FeasRelaxMode
+- Type: integer
+- Range:
+  - 0: minimize weighted sum of conflicts
+  - 1: optimal primal problem solution under minimized weighted sum of conflicts
+  - 2: minimize sum of conflicts
+  - 3: optimal primal problem solution under minimized sum of conflicts
+  - 4: minimize sum of square of conflicts
+  - 5: optimal primal problem solution under minimized sum of square of conflicts
+- Default: 0
+
+### parameters tuning related
+TuneTimeLimit (seconds)
+- Type: double
+- Range: [0, 1e20]
+- Default: 0 (automatic)
+
+TuneTargetTime (seconds)
+- Type: double
+- Range: [0, DBL_MAX]
+- Default: 1e-2
+
+TuneTargetRelGap
+- Type: double
+- Range: [0, DBL_MAX]
+- Default: 1e-4
+
+TuneMethod
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: aggressive
+  - 1: wider
+- Default: -1
+
+TuneMode
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: solving time
+  - 1: optimal relative tolerance
+  - 2: objective
+  - 3: lower bound of objective
+- Default: -1
+
+TuneMeasure
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: average
+  - 1: maximum
+- Default: -1
+
+TunePermutes
+- Type: integer
+- Range: [0, INT_MAX]
+- Default: 0 (automatic)
+
+TuneOutputLevel
+- Type: integer
+- Range:
+  - 0: off
+  - 1: summary of parameters
+  - 2: summary of trails
+  - 3: details of trails
+- Default: 2
+
+### Callbacks related
+LazyConstraints (only active for MIPs)
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: off
+  - 1: on
+- Default: -1
+
+### Parallel computation related
+Threads
+- Type: integer
+- Range: [-1, 128]
+- Default: -1 (automatic)
+
+BarThreads
+- Type: integer
+- Range: [-1, 128]
+- Default: -1 (automatic)
+
+SimplexThreads
+- Type: integer
+- Range: [-1, 128]
+- Default: -1 (automatic)
+
+CrossoverThreads
+- Type: integer
+- Range: [-1, 128]
+- Default: -1 (automatic)
+
+MipTasks
+- Type: integer
+- Range: [-1, 256]
+- Default: -1 (automatic)
+
+### GPU computation related
+GPUMode
+- Type: integer
+- Range:
+  - -1: automatic
+  - 0: CPU mode
+  - 1: NVIDIA GPU mode
+- Default: -1
+
+GPUDevice
+- Type: integer
+- Range: [-1, INT_MAX]
+- Default: -1 (automatic)
+
+PDLPTol
+- Type: double
+- Range: [1e-12, 1e-4]
+- Default: 1e-6
+
+### Logging related
+Logging
+- Type: integer
+- Range:
+  - 0: off
+  - 1: on
+- Default: 1
+
+LogToConsole
+- Type: integer
+- Range:
+  - 0: off
+  - 1: on
+- Default: 1
 
 LogFile
 - Type: string
-- Default:
-
-LogToConsole
-- Type: bool
-- Default:
-
-Threads
-- Type: integer
-- Default:
-
 - Default:
