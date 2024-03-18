@@ -93,10 +93,73 @@ optimize!(model)
 ```
 
 ## Options
+### Limits and tolerance
 TimeLimit (seconds)
 - Type: double
-- Range: [0, inf]
-- Default: 
+- Range: [0, 1e20]
+- Default: 1e20
+
+SolTimeLimit (seconds)
+- Type: double
+- Range: [0, 1e20]
+- Default: 1e20
+
+NodeLimit
+- Type: integer
+- Range: [-1, INT_MAX]
+- Default: -1 (automatic)
+
+BarIterLimit
+- Type: integer
+- Range: [0, INT_MAX]
+- Default: 500
+
+MatrixTol
+- Type: double
+- Range: [0, 1e-7]
+- Default: 1e-10
+
+FeasTol
+- Type: double
+- Range: [1e-9, 1e-4]
+- Default: 1e-6
+
+DualTol
+- Type: double
+- Range: [1e-9, 1e-4]
+- Default: 1e-6
+
+IntTol
+- Type: double
+- Range: [1e-9, 1e-1]
+- Default: 1e-6
+
+RelGap
+- Type: double
+- Range: [0, DBL_MAX]
+- Default: 1e-4
+
+AbsGap
+- Type: double
+- Range: [0, DBL_MAX]
+- Default: 1e-6
+
+### Presolve related
+Presolve
+- Type: integer
+- Range:
+- 
+- Default: -1
+
+Scaling
+- Type: integer
+- Range:
+- Default: -1
+
+Dualize
+- Type: integer
+- Range:
+- Default: -1
 
 LogFile
 - Type: string
