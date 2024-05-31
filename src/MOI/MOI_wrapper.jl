@@ -13,6 +13,7 @@ const MOI = MathOptInterface
 const CleverDicts = MOI.Utilities.CleverDicts
 
 include("psd_cone_bridge.jl")
+include("exp_cone_bridge.jl")
 
 @enum(
     _BoundType,
@@ -55,8 +56,9 @@ const _SCALAR_SETS = Union{
 # s.t. Ax = b,   c - A'y ∈ K
 #       x ∈ K
 #
-# where K is a product of `MOI.Zeros`, `MOI.Nonnegatives`, `MOI.SecondOrderCone`
-# and `ReorderedPSDCone`.
+# where K is a product of `MOI.Zeros`, `MOI.Nonnegatives`, 
+# `MOI.SecondOrderCone`, `ReorderedPSDCone`, `ReorderedPrimalExponentialCone`,
+# and `ReorderedDualExponentialCone`
 
 # This wrapper copies the MOI problem to the COPT dual so the natively supported
 # sets are `VectorAffineFunction`-in-`S` where `S` is one of the sets just
@@ -71,6 +73,7 @@ MOI.Utilities.@product_of_sets(
     MOI.Nonnegatives,
     MOI.SecondOrderCone,
     ReorderedPSDCone,
+    ReorderedExponentialCone,
 )
 
 const OptimizerCache = MOI.Utilities.GenericModel{
@@ -448,7 +451,10 @@ mutable struct ConeOptimizer <: MOI.AbstractOptimizer
 end
 
 function MOI.get(::ConeOptimizer, ::MOI.Bridges.ListOfNonstandardBridges)
-    return [ReorderedPSDConeBridge{Cdouble}]
+    return [
+        ReorderedPSDConeBridge{Cdouble},
+        ReorderedExponentialBridge{Cdouble},
+    ]
 end
 
 function _check_ret(model::Union{Optimizer,ConeOptimizer}, ret::Cint)
@@ -679,6 +685,7 @@ function MOI.supports_constraint(
             MOI.Nonnegatives,
             MOI.SecondOrderCone,
             ReorderedPSDCone,
+            ReorderedExponentialCone,
         },
     },
 )
@@ -4058,10 +4065,19 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     A_copt = sparse(A')
     nRow, nCol = size(A_copt)
     nBox = 0
-    nCone = length(socDim)
-    nRotatedCone = length(rotDim)
+    nSocCone = length(socDim)
+    nRotatedSocCone = length(rotDim)
+
+    nDualExp = MOI.get(
+        Ac,
+        MOI.NumberOfConstraints{
+            MOI.VectorAffineFunction{Float64},
+            ReorderedExponentialCone,
+        }(),
+    )
+
     nPrimalExp = 0
-    nDualExp = 0
+
     nPrimalPow = 0
     nDualPow = 0
     nPSD = length(psdDim)
@@ -4081,8 +4097,8 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     #  int nFree,
     #  int nPositive,
     #  int nBox,
-    #  int nCone,
-    #  int nRotateCone,
+    #  int nSocCone,
+    #  int nRotatedSocCone,
     #  int nPrimalExp,
     #  int nDualExp,
     #  int nPrimalPow,
@@ -4164,8 +4180,8 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
         nFree,
         nPositive,
         nBox,
-        nCone,
-        nRotatedCone,
+        nSocCone,
+        nRotatedSocCone,
         nPrimalExp,
         nDualExp,
         nPrimalPow,
@@ -4279,7 +4295,7 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
         end
 
         objScale = ones(nCol)
-        i = nFree + nPositive + nCone + nRotatedCone + 1
+        i = nFree + nPositive + nSocCone + nRotatedSocCone + 1
         for k in 1:nPSD
             for j in 1:psdDim[k]
                 for l in i+1:i+psdDim[k]-j
