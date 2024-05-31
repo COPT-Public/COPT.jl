@@ -72,8 +72,8 @@ MOI.Utilities.@product_of_sets(
     MOI.Zeros,
     MOI.Nonnegatives,
     MOI.SecondOrderCone,
-    ReorderedPSDCone,
     ReorderedExponentialCone,
+    ReorderedPSDCone,
 )
 
 const OptimizerCache = MOI.Utilities.GenericModel{
@@ -4077,7 +4077,6 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     )
 
     nPrimalExp = 0
-
     nPrimalPow = 0
     nDualPow = 0
     nPSD = length(psdDim)
