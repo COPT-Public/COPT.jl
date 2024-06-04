@@ -14,6 +14,7 @@ const CleverDicts = MOI.Utilities.CleverDicts
 
 include("psd_cone_bridge.jl")
 include("exp_cone_bridge.jl")
+include("dual_exp_cone_bridge.jl")
 
 @enum(
     _BoundType,
@@ -57,7 +58,7 @@ const _SCALAR_SETS = Union{
 #       x ∈ K
 #
 # where K is a product of `MOI.Zeros`, `MOI.Nonnegatives`, 
-# `MOI.SecondOrderCone`, `ReorderedPSDCone`, `ReorderedPrimalExponentialCone`,
+# `MOI.SecondOrderCone`, `ReorderedPSDCone`, `ReorderedExponentialCone`,
 # and `ReorderedDualExponentialCone`
 
 # This wrapper copies the MOI problem to the COPT dual so the natively supported
@@ -72,6 +73,7 @@ MOI.Utilities.@product_of_sets(
     MOI.Zeros,
     MOI.Nonnegatives,
     MOI.SecondOrderCone,
+    ReorderedDualExponentialCone,
     ReorderedExponentialCone,
     ReorderedPSDCone,
 )
@@ -454,6 +456,7 @@ function MOI.get(::ConeOptimizer, ::MOI.Bridges.ListOfNonstandardBridges)
     return [
         ReorderedPSDConeBridge{Cdouble},
         ReorderedExponentialBridge{Cdouble},
+        ReorderedDualExponentialBridge{Cdouble},
     ]
 end
 
@@ -686,6 +689,7 @@ function MOI.supports_constraint(
             MOI.SecondOrderCone,
             ReorderedPSDCone,
             ReorderedExponentialCone,
+            ReorderedDualExponentialCone,
         },
     },
 )
@@ -4068,6 +4072,14 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
     nSocCone = length(socDim)
     nRotatedSocCone = length(rotDim)
 
+    nPrimalExp = MOI.get(
+        Ac,
+        MOI.NumberOfConstraints{
+            MOI.VectorAffineFunction{Float64},
+            ReorderedDualExponentialCone,
+        }(),
+    )
+
     nDualExp = MOI.get(
         Ac,
         MOI.NumberOfConstraints{
@@ -4076,7 +4088,6 @@ function MOI.optimize!(dest::ConeOptimizer, src::OptimizerCache)
         }(),
     )
 
-    nPrimalExp = 0
     nPrimalPow = 0
     nDualPow = 0
     nPSD = length(psdDim)
