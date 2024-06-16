@@ -81,8 +81,8 @@ function test_lazy_constraint_callback()
                 model,
                 MOI.CallbackNodeStatus(cb_data),
             )::MOI.CallbackNodeStatusCode
-            int_sol = round.(Int, [x_val, y_val])
             if status == MOI.CALLBACK_NODE_STATUS_INTEGER
+                int_sol = round.(Int, [x_val, y_val])
                 @test isapprox(int_sol, [x_val, y_val], atol = 1e-6)
             end
             @test MOI.supports(model, MOI.LazyConstraint(cb_data))
@@ -291,8 +291,8 @@ function test_heuristic_callback()
                 model,
                 MOI.CallbackNodeStatus(cb_data),
             )::MOI.CallbackNodeStatusCode
-            int_sol = round.(Int, x_vals)
             if status == MOI.CALLBACK_NODE_STATUS_INTEGER
+                int_sol = round.(Int, x_vals)
                 @test isapprox(int_sol, x_vals, atol = 1e-6)
             end
             MOI.submit(
