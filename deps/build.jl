@@ -18,6 +18,7 @@ const _COPT_VERS = [ # From oldest to most recent.
     "65",
     "70",
     "71",
+    "72",
 ]
 const _COPT_HOME_ENV = "COPT_HOME"
 
@@ -58,6 +59,7 @@ function get_error_message_if_not_found()
     * 6.5
     * 7.0
     * 7.1
+    * 7.2
 
     You must download and install one of these versions separately.
 
