@@ -1,7 +1,7 @@
 name = "COPT"
 uuid = "227a2e2d-e949-4d8e-a1da-7384fe6f0b9f"
 repo = "https://github.com/COPT-Public/COPT.jl"
-version = "1.1.26"
+version = "1.1.27"
 
 [deps]
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
