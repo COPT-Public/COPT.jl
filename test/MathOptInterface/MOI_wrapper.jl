@@ -74,6 +74,10 @@ function test_runtests()
             # New tests for function modifcation, https://github.com/jump-dev/MathOptInterface.jl/pull/2328
             "test_basic_VectorAffineFunction_Indicator_LessThan",
             "test_basic_VectorAffineFunction_Indicator_GreaterThan",
+            # COPT does not support delete variables in multi-objective Optimization 
+            "test_multiobjective_vector_affine_function_delete",
+            "test_multiobjective_vector_quadratic_function_delete",
+            "test_multiobjective_vector_of_variables_delete"
         ],
     )
     return
