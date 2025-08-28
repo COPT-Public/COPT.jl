@@ -32,6 +32,7 @@ include("dual_exp_cone_bridge.jl")
     _SCALAR_AFFINE,
     _SCALAR_QUADRATIC,
     _UNSET_OBJECTIVE,
+    _VECTOR_AFFINE
 )
 
 @enum(
@@ -3393,6 +3394,10 @@ end
 function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
+    N = MOI.get(model, NumberOfObjectives())
+    if N > 1
+        return [MOI.get(model, MultiObjectiveValue(i)) for i in 1:N]
+    end
     return _copt_get_dbl_attr(
         model,
         model.solved_as_mip ? "BestObj" : "LpObjval",
@@ -3663,6 +3668,8 @@ function MOI.get(model::Optimizer, ::MOI.ObjectiveFunctionType)
         return MOI.VariableIndex
     elseif model.objective_type == _SCALAR_AFFINE
         return MOI.ScalarAffineFunction{Float64}
+    elseif model.objective_type == _VECTOR_AFFINE
+        return MOI.VectorAffineFunction{Float64}
     else
         @assert model.objective_type == _SCALAR_QUADRATIC
         return MOI.ScalarQuadraticFunction{Float64}
