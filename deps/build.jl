@@ -19,6 +19,7 @@ const _COPT_VERS = [ # From oldest to most recent.
     "70",
     "71",
     "72",
+    "80",
 ]
 const _COPT_HOME_ENV = "COPT_HOME"
 

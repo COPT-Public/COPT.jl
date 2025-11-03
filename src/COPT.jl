@@ -22,7 +22,7 @@ else
     # never get executed.
     @static if Sys.islinux() || Sys.isapple() || Sys.iswindows()
         # No local installation defined in deps.jl. Use the artifact instead.
-        coptdir = "copt72"
+        coptdir = "copt80"
         libdir = Sys.iswindows() ? "bin" : "lib"
         prefix = Sys.iswindows() ? "" : "lib"
         libname = prefix * "copt." * Libdl.dlext
