@@ -102,7 +102,10 @@ end
 include("MOI/MOI_wrapper.jl")
 include("MOI/indicator_constraint.jl")
 include("MOI/callback.jl")
-include("MOI/multi_objective.jl")
+
+if ((_COPT_VERSION.major >= 8) || (_COPT_VERSION.major >= 7 && _COPT_VERSION.minor >= 2 && _COPT_VERSION.patch >= 8))
+    include("MOI/multi_objective.jl")
+end
 
 # COPT exports all `COPT_xxx` and `copt_xxx` symbols. If you don't want all of
 # these symbols in your environment, then use `import COPT` instead of
