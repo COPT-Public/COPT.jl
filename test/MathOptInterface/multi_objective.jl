@@ -28,6 +28,10 @@ function test_multiobjective_func()
     model = COPT.Optimizer(env)
     MOI.set(model, MOI.Silent(), true)
 
+    if !(MOI.supports(model, MOI.ObjectiveFunction{MOI.VectorAffineFunction{Float64}}()))
+        return
+    end
+
     ## test initial value of "NumberOfObjectives"
     @test MOI.get(model, COPT.NumberOfObjectives()) == 0
 
@@ -94,6 +98,10 @@ function test_example_biobjective_knapsack()
     env = COPT.Env()
     model = COPT.Optimizer(env)
     MOI.set(model, MOI.Silent(), true)
+
+    if !(MOI.supports(model, MOI.ObjectiveFunction{MOI.VectorAffineFunction{Float64}}()))
+        return
+    end
 
     x = MOI.add_variables(model, length(w))
     MOI.add_constraint.(model, x, MOI.ZeroOne())

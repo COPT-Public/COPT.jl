@@ -3394,10 +3394,15 @@ end
 function MOI.get(model::Optimizer, attr::MOI.ObjectiveValue)
     _throw_if_optimize_in_progress(model, attr)
     MOI.check_result_index_bounds(model, attr)
-    N = MOI.get(model, NumberOfObjectives())
+    N = 1
+    if ((COPT_VERSION_MAJOR >= 8) || (COPT_VERSION_MAJOR >= 7 && COPT_VERSION_MINOR >= 2 && COPT_VERSION_TECHNICAL >= 8))
+        N = MOI.get(model, NumberOfObjectives())
+    end
+
     if N > 1
         return [MOI.get(model, MultiObjectiveValue(i)) for i in 1:N]
     end
+    
     return _copt_get_dbl_attr(
         model,
         model.solved_as_mip ? "BestObj" : "LpObjval",
