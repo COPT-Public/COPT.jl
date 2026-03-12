@@ -4037,6 +4037,26 @@ function MOI.get(
     return MOI.NOT_IN_CONFLICT
 end
 
+function MOI.get(
+    model::Optimizer,
+    ::MOI.ConstraintConflictStatus,
+    index::MOI.ConstraintIndex{
+        MOI.VariableIndex,
+        <:Union{MOI.Integer,MOI.ZeroOne},
+    },
+)
+    _ensure_conflict_computed(model)
+    if _is_feasible(model)
+        return MOI.NOT_IN_CONFLICT
+    end
+
+    if MOI.is_valid(model, index)
+        return MOI.MAYBE_IN_CONFLICT
+    else
+        throw(MOI.InvalidIndex(index))
+    end
+end
+
 ###
 ### Optimize methods for ConeOptimizer.
 ###
