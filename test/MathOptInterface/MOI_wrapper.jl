@@ -50,6 +50,7 @@ function test_runtests()
             "test_conic_SecondOrderCone_negative_post_bound_3",
             # COPT does not support quadratic constraints with empty Q matrix
             "test_basic_VectorQuadraticFunction_GeometricMeanCone",
+            "test_basic_VectorQuadraticFunction_DualGeometricMeanCone",
             # COPT does not provide dual solution for quadratic constraints
             "test_conic_GeometricMeanCone_VectorAffineFunction",
             "test_conic_GeometricMeanCone_VectorAffineFunction_2",
